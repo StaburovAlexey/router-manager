@@ -69,6 +69,7 @@ func Load(path string) (RuleSet, error) {
 
 func Save(path string, set RuleSet) error {
 	set = normalize(set)
+	set.Rules = nonEmptyRules(set.Rules)
 	data, err := json.MarshalIndent(set, "", "  ")
 	if err != nil {
 		return err
@@ -161,14 +162,43 @@ func normalize(set RuleSet) RuleSet {
 	if set.Version == 0 {
 		set.Version = 3
 	}
-	if len(set.Rules) < 3 {
-		base := EmptyRuleSet()
-		for i := range set.Rules {
-			base.Rules[i] = set.Rules[i]
-		}
-		set = base
+	base := EmptyRuleSet()
+	for _, rule := range set.Rules {
+		base.Rules[0].DomainSuffix = appendUniqueStrings(base.Rules[0].DomainSuffix, rule.DomainSuffix...)
+		base.Rules[1].Domain = appendUniqueStrings(base.Rules[1].Domain, rule.Domain...)
+		base.Rules[2].IPCIDR = appendUniqueStrings(base.Rules[2].IPCIDR, rule.IPCIDR...)
 	}
-	return set
+	base.Version = set.Version
+	return base
+}
+
+func nonEmptyRules(rules []Rule) []Rule {
+	var result []Rule
+	for _, rule := range rules {
+		if len(rule.DomainSuffix) > 0 {
+			result = append(result, Rule{DomainSuffix: rule.DomainSuffix})
+		}
+		if len(rule.Domain) > 0 {
+			result = append(result, Rule{Domain: rule.Domain})
+		}
+		if len(rule.IPCIDR) > 0 {
+			result = append(result, Rule{IPCIDR: rule.IPCIDR})
+		}
+	}
+	if result == nil {
+		return []Rule{}
+	}
+	return result
+}
+
+func appendUniqueStrings(values []string, additions ...string) []string {
+	for _, value := range additions {
+		if strings.TrimSpace(value) == "" {
+			continue
+		}
+		values = appendIfMissing(values, value)
+	}
+	return values
 }
 
 func normalizeValue(kind string, value string) (string, error) {
