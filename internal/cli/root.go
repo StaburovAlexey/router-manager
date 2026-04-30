@@ -15,6 +15,7 @@ import (
 
 	"vpn-router/internal/bootstrap"
 	"vpn-router/internal/config"
+	"vpn-router/internal/confirm"
 	"vpn-router/internal/diagnostics"
 	"vpn-router/internal/foreign"
 	"vpn-router/internal/modes"
@@ -426,10 +427,8 @@ func foreignCmd(ctx context.Context, opts Options) *cobra.Command {
 		Short: "Очистить VPS foreign-сервера",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			fmt.Fprint(cmd.OutOrStdout(), "Введите YES для продолжения: ")
 			reader := bufio.NewReader(os.Stdin)
-			answer, _ := reader.ReadString('\n')
-			if strings.TrimSpace(answer) != "YES" {
+			if !confirm.AskYesNo(reader, cmd.OutOrStdout(), "Очистить VPS foreign-сервера?") {
 				fmt.Fprintln(cmd.OutOrStdout(), "Операция отменена.")
 				return nil
 			}

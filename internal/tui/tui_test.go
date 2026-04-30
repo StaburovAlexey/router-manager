@@ -2,6 +2,7 @@ package tui
 
 import (
 	"context"
+	"strings"
 	"testing"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -44,12 +45,67 @@ func TestTUIQuitReturnsCommand(t *testing.T) {
 	}
 }
 
+func TestTUIConfirmRequiresExplicitYesOrNo(t *testing.T) {
+	m := testModel().startConfirm("Проверка", "Опасное действие.", "foreign-remove", "de-1", nil)
+	m = m.updateConfirm(tea.KeyMsg{Type: tea.KeyEnter})
+	if m.mode != modeConfirm {
+		t.Fatalf("empty enter must keep confirm mode, got %q", m.mode)
+	}
+	if !strings.Contains(m.message, "yes или no") {
+		t.Fatalf("unexpected message: %q", m.message)
+	}
+}
+
+func TestTUIConfirmNoCancels(t *testing.T) {
+	m := typeConfirmInput(testModel().startConfirm("Проверка", "Опасное действие.", "foreign-remove", "de-1", nil), "no")
+	m = m.updateConfirm(tea.KeyMsg{Type: tea.KeyEnter})
+	if m.mode != modeMenu {
+		t.Fatalf("mode = %q", m.mode)
+	}
+	if !strings.Contains(m.message, "отменена") {
+		t.Fatalf("unexpected message: %q", m.message)
+	}
+}
+
+func TestTUIConfirmYesRunsAction(t *testing.T) {
+	paths := config.NewPaths(t.TempDir())
+	if err := config.SaveForeign(paths, config.ForeignServers{Servers: []config.ForeignServer{{Name: "de-1"}}}); err != nil {
+		t.Fatal(err)
+	}
+	m := typeConfirmInput(testModelWithPaths(paths).startConfirm("Удалить", "Удалить сервер.", "foreign-remove", "de-1", nil), "yes")
+	m = m.updateConfirm(tea.KeyMsg{Type: tea.KeyEnter})
+	if m.mode != modeMenu {
+		t.Fatalf("mode = %q", m.mode)
+	}
+	if !strings.Contains(m.message, "удалён") {
+		t.Fatalf("unexpected message: %q", m.message)
+	}
+	servers, err := config.LoadForeign(paths)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(servers.Servers) != 0 {
+		t.Fatalf("server was not removed: %#v", servers.Servers)
+	}
+}
+
 func testModel() model {
+	return testModelWithPaths(config.NewPaths("/tmp/vpn-router-tui-test"))
+}
+
+func testModelWithPaths(paths config.Paths) model {
 	return model{
 		ctx:    context.Background(),
-		paths:  config.NewPaths("/tmp/vpn-router-tui-test"),
+		paths:  paths,
 		runner: &shell.DryRunner{},
 		menu:   "main",
 		mode:   modeMenu,
 	}
+}
+
+func typeConfirmInput(m model, value string) model {
+	for _, r := range value {
+		m = m.updateConfirm(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{r}})
+	}
+	return m
 }

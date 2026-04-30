@@ -68,6 +68,7 @@ type confirmState struct {
 	action string
 	value  string
 	params map[string]string
+	input  string
 }
 
 type model struct {
@@ -213,16 +214,34 @@ func (m model) updateForm(key tea.KeyMsg) model {
 }
 
 func (m model) updateConfirm(key tea.KeyMsg) model {
-	switch strings.ToLower(key.String()) {
-	case "esc", "n":
+	switch key.String() {
+	case "esc":
 		m.mode = modeMenu
 		m.message = "Операция отменена."
 		m.confirm = confirmState{}
-	case "enter", "y":
-		confirm := m.confirm
-		m.mode = modeMenu
-		m.confirm = confirmState{}
-		return m.runConfirm(confirm)
+	case "enter":
+		answer := strings.ToLower(strings.TrimSpace(m.confirm.input))
+		switch answer {
+		case "yes":
+			confirm := m.confirm
+			m.mode = modeMenu
+			m.message = ""
+			m.confirm = confirmState{}
+			return m.runConfirm(confirm)
+		case "no":
+			m.mode = modeMenu
+			m.message = "Операция отменена."
+			m.confirm = confirmState{}
+		default:
+			m.message = "Нужно обязательно ввести yes или no."
+			m.confirm.input = ""
+		}
+	case "backspace", "ctrl+h":
+		m.confirm.input = trimLastRune(m.confirm.input)
+	default:
+		if len(key.Runes) > 0 {
+			m.confirm.input += string(key.Runes)
+		}
 	}
 	return m
 }
@@ -302,7 +321,15 @@ func (m model) viewForm() string {
 }
 
 func (m model) viewConfirm() string {
-	return fmt.Sprintf("VPN Router Manager / %s\n\n%s\n\nY/Enter - подтвердить, N/Esc - отмена\n", m.confirm.title, m.confirm.body)
+	var b strings.Builder
+	fmt.Fprintf(&b, "VPN Router Manager / %s\n\n%s\n\n", m.confirm.title, m.confirm.body)
+	if strings.TrimSpace(m.message) != "" {
+		fmt.Fprintln(&b, m.message)
+		fmt.Fprintln(&b)
+	}
+	fmt.Fprintf(&b, "Ответ: %s\n\n", m.confirm.input)
+	fmt.Fprintln(&b, "Введите yes для подтверждения или no для отмены. Esc - отмена")
+	return b.String()
 }
 
 func (m model) setMenu(menu string) model {
@@ -637,6 +664,7 @@ func (m model) startPrompt(title string, label string, def string, action string
 
 func (m model) startConfirm(title string, body string, action string, value string, params map[string]string) model {
 	m.mode = modeConfirm
+	m.message = ""
 	m.confirm = confirmState{title: title, body: body, action: action, value: value, params: params}
 	return m
 }

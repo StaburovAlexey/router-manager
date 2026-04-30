@@ -11,6 +11,7 @@ import (
 
 	"vpn-router/internal/bootstrap"
 	"vpn-router/internal/config"
+	"vpn-router/internal/confirm"
 	"vpn-router/internal/foreign"
 	"vpn-router/internal/network"
 	"vpn-router/internal/nftables"
@@ -53,7 +54,7 @@ func (s Service) Run(ctx context.Context) error {
 	findings := preflight.Collect(ctx, s.Runner, s.Paths)
 	if len(findings) > 0 {
 		fmt.Fprintln(s.Out, preflight.Format(findings))
-		if !isYes(ask(reader, s.Out, "Подтвердите перезапись", "")) {
+		if !confirm.AskYesNo(reader, s.Out, "Подтвердите перезапись") {
 			return fmt.Errorf("setup остановлен: перезапись существующих настроек не подтверждена")
 		}
 		if err := preflight.PrepareOverwrite(ctx, s.Runner); err != nil {
@@ -114,7 +115,7 @@ func (s Service) Run(ctx context.Context) error {
 	}
 	if findings := preflight.CollectRemote(ctx, ssh, ruTarget, "RU-сервер"); len(findings) > 0 {
 		fmt.Fprintln(s.Out, preflight.Format(findings))
-		if !isYes(ask(reader, s.Out, "Подтвердите перезапись RU", "")) {
+		if !confirm.AskYesNo(reader, s.Out, "Подтвердите перезапись RU") {
 			return fmt.Errorf("setup остановлен: перезапись RU-сервера не подтверждена")
 		}
 	}
@@ -139,7 +140,7 @@ func (s Service) Run(ctx context.Context) error {
 	for index := 0; ; index++ {
 		if index == 0 {
 			fmt.Fprintln(s.Out, "Добавление foreign-сервера.")
-		} else if !isYes(ask(reader, s.Out, "Добавить ещё один foreign-сервер? Введите yes или нажмите Enter", "")) {
+		} else if !confirm.AskYesNo(reader, s.Out, "Добавить ещё один foreign-сервер?") {
 			break
 		}
 		added, err := configureForeign(ctx, s.Paths, s.Runner, ssh, reader, s.Out, cfg, ruPrivate, index)
@@ -248,7 +249,7 @@ func configureForeign(ctx context.Context, paths config.Paths, runner shell.Runn
 	}
 	if findings := preflight.CollectRemote(ctx, ssh, foreignTarget, "foreign-сервер"); len(findings) > 0 && foreignAction != "use" {
 		fmt.Fprintln(out, preflight.Format(findings))
-		if !isYes(ask(reader, out, "Подтвердите перезапись foreign", "")) {
+		if !confirm.AskYesNo(reader, out, "Подтвердите перезапись foreign") {
 			return foreignServer, fmt.Errorf("setup остановлен: перезапись foreign-сервера не подтверждена")
 		}
 	}
@@ -389,10 +390,6 @@ func showValue(value string) string {
 		return "не настроено"
 	}
 	return value
-}
-
-func isYes(value string) bool {
-	return strings.EqualFold(strings.TrimSpace(value), "yes")
 }
 
 func chooseWiFiSettings(cfg *config.Config, caps wifi.Capabilities, reader *bufio.Reader, out io.Writer) error {
@@ -580,7 +577,7 @@ func confirmAPInterfaceDisruption(ctx context.Context, runner shell.Runner, read
 		fmt.Fprintln(out, "Если вы подключены к устройству через этот Wi-Fi интерфейс, SSH-сессия оборвётся.")
 	}
 	fmt.Fprintln(out, "Рекомендуется выбрать отдельный USB Wi-Fi адаптер без IP-адреса для раздачи.")
-	if !isYes(ask(reader, out, "Продолжить с этим AP-интерфейсом? Введите yes", "")) {
+	if !confirm.AskYesNo(reader, out, "Продолжить с этим AP-интерфейсом?") {
 		return fmt.Errorf("setup остановлен: AP-интерфейс не подтверждён")
 	}
 	return nil

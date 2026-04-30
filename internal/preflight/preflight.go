@@ -77,7 +77,7 @@ func Format(findings []Finding) string {
 	}
 	fmt.Fprintln(&b)
 	fmt.Fprintln(&b, "Если продолжить, vpn-router сделает backup управляемых файлов и перезапишет активные настройки своими конфигами.")
-	fmt.Fprintln(&b, "Для продолжения введите yes.")
+	fmt.Fprintln(&b, "Для продолжения введите yes. Для отмены введите no.")
 	return b.String()
 }
 
