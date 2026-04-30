@@ -137,6 +137,32 @@ func TestValidateSettingsRejectsUnsupportedFiveGHz(t *testing.T) {
 	}
 }
 
+func TestParseCapabilitiesSkipsNoIRAndRadarChannels(t *testing.T) {
+	text := `
+Supported interface modes:
+	 * managed
+	 * AP
+Band 1:
+	Frequencies:
+		* 2412 MHz [1] (20.0 dBm)
+		* 2437 MHz [6] (20.0 dBm)
+Band 2:
+	VHT Capabilities (0x0)
+	Frequencies:
+		* 5180 MHz [36] (20.0 dBm) (no IR)
+		* 5200 MHz [40] (20.0 dBm) (NO-IR)
+		* 5220 MHz [44] (20.0 dBm) (radar detection)
+		* 5745 MHz [149] (20.0 dBm)
+`
+	caps := ParseCapabilities(text)
+	if !caps.Supports24 {
+		t.Fatalf("expected 2.4 GHz support: %#v", caps)
+	}
+	if !caps.Supports5 || len(caps.Channels5) != 1 || caps.Channels5[0] != 149 {
+		t.Fatalf("unexpected 5GHz channels: %#v", caps.Channels5)
+	}
+}
+
 func TestInspectInterfaceRejectsP2PDevice(t *testing.T) {
 	runner := &shell.DryRunner{Outputs: map[string]string{
 		"iw dev": `

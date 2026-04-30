@@ -240,7 +240,7 @@ func parseCapabilities(text string) Capabilities {
 		case strings.Contains(line, "HE Iftypes") || strings.Contains(line, "HE PHY Capabilities"):
 			caps.SupportsHE = true
 		}
-		if match := channelRE.FindStringSubmatch(line); len(match) == 3 && !strings.Contains(line, "disabled") {
+		if match := channelRE.FindStringSubmatch(line); len(match) == 3 && channelAllowedForAP(line) {
 			freq, _ := strconv.Atoi(match[1])
 			channel, _ := strconv.Atoi(match[2])
 			if freq >= 2400 && freq < 2500 {
@@ -260,6 +260,16 @@ func parseCapabilities(text string) Capabilities {
 		caps.Widths = []int{20}
 	}
 	return caps
+}
+
+func channelAllowedForAP(line string) bool {
+	lower := strings.ToLower(line)
+	for _, marker := range []string{"disabled", "no-ir", "no ir", "no initiateradiation", "radar detection"} {
+		if strings.Contains(lower, marker) {
+			return false
+		}
+	}
+	return true
 }
 
 func wiphySection(text string, phy string) string {
