@@ -67,7 +67,7 @@ func Format(status Status) string {
 	fmt.Fprintf(&b, "Интернет на устройстве: %s\n", internetSummary(status))
 	fmt.Fprintf(&b, "Wi-Fi раздача: %s\n", wifiSummary(status))
 	fmt.Fprintf(&b, "Маршрут: %s\n", routeSummary(status))
-	fmt.Fprintf(&b, "DNS: %s\n", dnsSummary(status))
+	fmt.Fprintf(&b, "DNS на мини-ПК: %s\n", dnsSummary(status))
 	fmt.Fprintf(&b, "Клиентов Wi-Fi: %s\n", value(status.WiFiClientCount))
 	recommendations := recommendations(status)
 	if len(recommendations) > 0 {
@@ -92,7 +92,7 @@ func Format(status Status) string {
 	fmt.Fprintf(&b, "Режим выходных серверов: %s\n", value(status.ForeignMode))
 	fmt.Fprintf(&b, "Выбранный выходной сервер: %s\n", value(status.SelectedForeign))
 	fmt.Fprintf(&b, "Публичный IP: %s\n", value(status.PublicIP))
-	fmt.Fprintf(&b, "DNS: %s\n", value(status.DNS))
+	fmt.Fprintf(&b, "DNS на мини-ПК: %s\n", value(status.DNS))
 	fmt.Fprintf(&b, "rfkill: %s\n", value(status.RFKill))
 	return b.String()
 }
@@ -151,7 +151,7 @@ func routeSummary(status Status) string {
 
 func dnsSummary(status Status) string {
 	if status.DNS == "ok" {
-		return "OK"
+		return "OK (проверено на мини-ПК)"
 	}
 	return "ошибка"
 }

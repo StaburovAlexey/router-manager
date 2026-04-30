@@ -391,13 +391,10 @@ func ensureSSHAccess(ctx context.Context, ssh sshclient.Client, target sshclient
 	if err != nil {
 		return fmt.Errorf("не удалось получить host key %s: %w", label, err)
 	}
-	fmt.Fprintf(out, "\nFingerprint %s:\n%s\n\n", label, sshclient.HostKeyFingerprint(ctx, hostKey))
-	if !confirm.AskYesNo(reader, out, "Подтвердить host key сервера?") {
-		return fmt.Errorf("настройка остановлена: host key %s не подтверждён", label)
-	}
-	if err := sshclient.TrustHostKey(hostKey); err != nil {
+	if err := sshclient.TrustHostKey(ctx, target, hostKey); err != nil {
 		return fmt.Errorf("не удалось сохранить host key %s: %w", label, err)
 	}
+	fmt.Fprintf(out, "Host key для %s сохранён.\n", label)
 	publicKey, err := sshclient.EnsureRootKeyPair(ctx)
 	if err != nil {
 		return fmt.Errorf("не удалось подготовить SSH-ключ root-пользователя мини-ПК: %w", err)

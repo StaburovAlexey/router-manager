@@ -108,10 +108,10 @@ func ApplyAccessPoint(ctx context.Context, runner shell.Runner, paths config.Pat
 	if err := system.UnmaskEnable(ctx, runner, "dnsmasq"); err != nil {
 		return err
 	}
-	if err := system.RestartAndCheck(ctx, runner, "hostapd"); err != nil {
+	if err := network.ConfigureLANInterface(ctx, runner, cfg); err != nil {
 		return err
 	}
-	if err := network.ConfigureLANInterface(ctx, runner, cfg); err != nil {
+	if err := system.RestartAndCheck(ctx, runner, "hostapd"); err != nil {
 		return err
 	}
 	return system.RestartAndCheck(ctx, runner, "dnsmasq")
@@ -125,10 +125,10 @@ func Restart(ctx context.Context, runner shell.Runner, paths config.Paths) error
 	if err := PrepareRadio(ctx, runner, cfg.MiniPC.APInterface); err != nil {
 		return err
 	}
-	if err := system.RestartAndCheck(ctx, runner, "hostapd"); err != nil {
+	if err := network.ConfigureLANInterface(ctx, runner, cfg); err != nil {
 		return err
 	}
-	if err := network.ConfigureLANInterface(ctx, runner, cfg); err != nil {
+	if err := system.RestartAndCheck(ctx, runner, "hostapd"); err != nil {
 		return err
 	}
 	return system.RestartAndCheck(ctx, runner, "dnsmasq")

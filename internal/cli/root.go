@@ -290,7 +290,7 @@ func qrCmd(ctx context.Context, opts Options) *cobra.Command {
 func directRulesCommands(ctx context.Context, opts Options) []*cobra.Command {
 	add := &cobra.Command{
 		Use:   "direct-add <site|domain|suffix|ip|cidr> <value>",
-		Short: "Добавить сайт или адрес прямого доступа прямого доступа",
+		Short: "Добавить сайт или адрес прямого доступа",
 		Args:  cobra.ExactArgs(2),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if err := system.RequireRoot(); err != nil {

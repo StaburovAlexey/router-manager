@@ -76,6 +76,28 @@ func TestSwitchAccessPointRollsBackConfigWhenNewAdapterFails(t *testing.T) {
 	}
 }
 
+func TestApplyAccessPointConfiguresLANBeforeRestartingServices(t *testing.T) {
+	paths := testWiFiPaths(t)
+	cfg := config.DefaultConfig()
+	cfg.MiniPC.APInterface = "wlan1"
+	cfg.MiniPC.SSID = "TestAP"
+	cfg.WiFi.Password = "password123"
+	runner := testWiFiRunner()
+
+	if err := ApplyAccessPoint(context.Background(), runner, paths, cfg); err != nil {
+		t.Fatal(err)
+	}
+	lan := indexOf(runner.Calls, "ip addr replace 10.77.0.1/24 dev wlan1")
+	hostapd := indexOf(runner.Calls, "systemctl restart hostapd")
+	dnsmasq := indexOf(runner.Calls, "systemctl restart dnsmasq")
+	if lan < 0 || hostapd < 0 || dnsmasq < 0 {
+		t.Fatalf("missing expected calls: %#v", runner.Calls)
+	}
+	if !(lan < hostapd && hostapd < dnsmasq) {
+		t.Fatalf("unexpected order, lan=%d hostapd=%d dnsmasq=%d calls=%#v", lan, hostapd, dnsmasq, runner.Calls)
+	}
+}
+
 func testWiFiPaths(t *testing.T) config.Paths {
 	t.Helper()
 	dir := t.TempDir()
@@ -134,12 +156,16 @@ Wiphy phy1
 }
 
 func called(calls []string, want string) bool {
-	for _, call := range calls {
+	return indexOf(calls, want) >= 0
+}
+
+func indexOf(calls []string, want string) int {
+	for i, call := range calls {
 		if call == want {
-			return true
+			return i
 		}
 	}
-	return false
+	return -1
 }
 
 type errTest struct{}

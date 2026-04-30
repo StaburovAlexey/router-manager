@@ -124,24 +124,23 @@ func ScanHostKey(ctx context.Context, target Target) (string, error) {
 	return text, nil
 }
 
-func HostKeyFingerprint(ctx context.Context, hostKey string) string {
-	cmd := exec.CommandContext(ctx, "ssh-keygen", "-lf", "-")
-	cmd.Stdin = strings.NewReader(hostKey)
-	out, err := cmd.Output()
-	if err != nil {
-		return strings.TrimSpace(hostKey)
-	}
-	return strings.TrimSpace(string(out))
-}
+var rootSSHDir = "/root/.ssh"
 
-func TrustHostKey(hostKey string) error {
-	dir := "/root/.ssh"
+func TrustHostKey(ctx context.Context, target Target, hostKey string) error {
+	hostKey = strings.TrimSpace(hostKey)
+	if hostKey == "" {
+		return fmt.Errorf("host key пустой")
+	}
+	dir := rootSSHDir
 	path := filepath.Join(dir, "known_hosts")
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return err
 	}
+	if err := removeKnownHost(ctx, target, path); err != nil {
+		return err
+	}
 	existing, _ := os.ReadFile(path)
-	if strings.Contains(string(existing), strings.TrimSpace(hostKey)) {
+	if strings.Contains(string(existing), hostKey) {
 		return nil
 	}
 	file, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o600)
@@ -149,11 +148,36 @@ func TrustHostKey(hostKey string) error {
 		return err
 	}
 	defer file.Close()
-	if _, err := io.WriteString(file, strings.TrimSpace(hostKey)+"\n"); err != nil {
+	if _, err := io.WriteString(file, hostKey+"\n"); err != nil {
 		return err
 	}
 	_ = os.Chmod(dir, 0o700)
 	return os.Chmod(path, 0o600)
+}
+
+func removeKnownHost(ctx context.Context, target Target, knownHosts string) error {
+	if _, err := os.Stat(knownHosts); os.IsNotExist(err) {
+		return nil
+	} else if err != nil {
+		return err
+	}
+	for _, host := range knownHostPatterns(target) {
+		cmd := exec.CommandContext(ctx, "ssh-keygen", "-R", host, "-f", knownHosts)
+		out, err := cmd.CombinedOutput()
+		if err != nil {
+			return fmt.Errorf("ssh-keygen -R %s -f %s: %w: %s", host, knownHosts, err, strings.TrimSpace(string(out)))
+		}
+	}
+	return nil
+}
+
+func knownHostPatterns(target Target) []string {
+	p := port(target)
+	bracketed := fmt.Sprintf("[%s]:%d", target.IP, p)
+	if p == 22 {
+		return []string{target.IP, bracketed}
+	}
+	return []string{bracketed}
 }
 
 func InstallPublicKeyWithPassword(ctx context.Context, target Target, password string, publicKey string) error {

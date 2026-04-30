@@ -44,6 +44,8 @@ type Service struct {
 	Out                io.Writer
 	RemoveDependencies bool
 	TargetBinaries     []string
+	SingBoxBinaryPath  string
+	SingBoxUnitPath    string
 	Restore            func(context.Context) error
 	RequireRoot        func() error
 }
@@ -105,14 +107,34 @@ func (s Service) Run(ctx context.Context) error {
 }
 
 func (s Service) removeSingBox(ctx context.Context) error {
+	unitPath := s.singBoxUnitPath()
+	if !isRouterManagerSingBoxUnit(unitPath) {
+		return nil
+	}
 	_ = system.Systemctl(ctx, s.Runner, "stop", singbox.Service)
 	_ = system.Systemctl(ctx, s.Runner, "disable", singbox.Service)
-	if isRouterManagerSingBoxUnit(singbox.UnitPath) {
-		_ = os.Remove(singbox.UnitPath)
-		_ = s.Runner.Run(ctx, "systemctl", "daemon-reload")
+	if err := os.Remove(unitPath); err != nil && !os.IsNotExist(err) {
+		return err
 	}
-	_ = os.Remove(singbox.BinaryPath)
+	_ = s.Runner.Run(ctx, "systemctl", "daemon-reload")
+	if err := os.Remove(s.singBoxBinaryPath()); err != nil && !os.IsNotExist(err) {
+		return err
+	}
 	return nil
+}
+
+func (s Service) singBoxBinaryPath() string {
+	if strings.TrimSpace(s.SingBoxBinaryPath) != "" {
+		return s.SingBoxBinaryPath
+	}
+	return singbox.BinaryPath
+}
+
+func (s Service) singBoxUnitPath() string {
+	if strings.TrimSpace(s.SingBoxUnitPath) != "" {
+		return s.SingBoxUnitPath
+	}
+	return singbox.UnitPath
 }
 
 func (s Service) removeBinaries() error {

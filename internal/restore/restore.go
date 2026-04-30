@@ -63,9 +63,15 @@ func (s Service) Run(ctx context.Context) error {
 			return nil
 		}},
 		{"Восстановление управляемых конфигов из backup или удаление", func() error {
-			restoreOrRemove(s.Paths.HostapdConf, s.Paths.BackupsDir)
-			restoreOrRemove(s.Paths.DnsmasqConf, s.Paths.BackupsDir)
-			restoreOrRemove(s.Paths.SingBoxLocalConf, s.Paths.BackupsDir)
+			var errors []string
+			for _, path := range []string{s.Paths.HostapdConf, s.Paths.DnsmasqConf, s.Paths.SingBoxLocalConf} {
+				if err := restoreOrRemove(path, s.Paths.BackupsDir); err != nil {
+					errors = append(errors, fmt.Sprintf("%s: %v", path, err))
+				}
+			}
+			if len(errors) > 0 {
+				return fmt.Errorf("%s", strings.Join(errors, "\n"))
+			}
 			return nil
 		}},
 		{"Обновление адреса WAN через DHCP", func() error {
@@ -96,13 +102,15 @@ type step struct {
 	run  func() error
 }
 
-func restoreOrRemove(path string, backupsDir string) {
+func restoreOrRemove(path string, backupsDir string) error {
 	backup := latestBackupFor(path, backupsDir)
 	if backup == "" {
-		_ = os.Remove(path)
-		return
+		if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
+			return err
+		}
+		return nil
 	}
-	_ = system.RestoreFile(backup, path, 0o600)
+	return system.RestoreFile(backup, path, 0o600)
 }
 
 func latestBackupFor(path string, backupsDir string) string {

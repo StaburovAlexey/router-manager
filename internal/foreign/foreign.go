@@ -63,7 +63,7 @@ func (s Service) Add(ctx context.Context, server config.ForeignServer) (config.F
 	}
 	selected := s.currentRUSelected(ctx)
 	if err := s.RefreshRU(ctx, servers, selected); err != nil {
-		return server, err
+		return server, fmt.Errorf("выходной сервер %s добавлен и сохранён, но входной сервер не обновлён: %w", server.Name, err)
 	}
 	return server, nil
 }

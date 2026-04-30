@@ -23,6 +23,7 @@ build-arm64:
 	sha256sum $(DIST_DIR)/router-manager-linux-arm64
 
 build-all: build-amd64 build-arm64
+	(cd $(DIST_DIR) && sha256sum router-manager-linux-amd64 router-manager-linux-arm64 > checksums.txt && cat checksums.txt)
 
 deploy: build-amd64
 	ssh $(TARGET) 'cat > /tmp/router-manager' < $(DIST_DIR)/router-manager-linux-amd64

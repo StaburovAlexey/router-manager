@@ -21,7 +21,6 @@ var AptDependencies = []string{
 	"nftables",
 	"hostapd",
 	"dnsmasq",
-	"iw",
 	"rfkill",
 	"curl",
 	"openssh-client",
