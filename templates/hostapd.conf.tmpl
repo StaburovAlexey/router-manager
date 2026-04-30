@@ -1,0 +1,16 @@
+country_code={{.Country}}
+interface={{.Interface}}
+driver=nl80211
+ssid={{.SSID}}
+hw_mode={{.HWMode}}
+channel={{.Channel}}
+ieee80211n={{bool01 .IEEE80211n}}
+{{if .IEEE80211ac}}ieee80211ac=1
+vht_oper_chwidth={{.VHTOperChWidth}}
+{{end}}{{if .IEEE80211ax}}ieee80211ax=1
+{{end}}wmm_enabled=1
+auth_algs=1
+wpa=2
+wpa_key_mgmt=WPA-PSK
+rsn_pairwise=CCMP
+wpa_passphrase={{.Password}}

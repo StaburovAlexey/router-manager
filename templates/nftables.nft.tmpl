@@ -1,0 +1,22 @@
+destroy table inet vpn_router
+
+table inet vpn_router {
+  chain forward {
+    type filter hook forward priority 0; policy drop;
+    ct state established,related accept
+    iifname "{{.APInterface}}" oifname "{{.APInterface}}" accept
+{{if eq .Mode "direct"}}
+    iifname "{{.APInterface}}" accept
+{{else}}
+    iifname "{{.APInterface}}" oifname "tun0" accept
+{{if .RUServerIP}}    iifname "{{.APInterface}}" ip daddr {{.RUServerIP}} accept
+{{end}}    iifname "{{.APInterface}}" ip daddr { 10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16 } accept
+    iifname "{{.APInterface}}" drop
+{{end}}
+  }
+
+  chain postrouting {
+    type nat hook postrouting priority srcnat; policy accept;
+    ip saddr {{.LANCIDR}} masquerade
+  }
+}

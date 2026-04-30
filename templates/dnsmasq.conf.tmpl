@@ -1,0 +1,9 @@
+interface={{.APInterface}}
+bind-interfaces
+dhcp-range={{.DHCPStart}},{{.DHCPEnd}},{{.LeaseTime}}
+dhcp-option=3,{{.Gateway}}
+dhcp-option=6,{{.Gateway}}
+server=1.1.1.1
+server=8.8.8.8
+domain-needed
+bogus-priv
