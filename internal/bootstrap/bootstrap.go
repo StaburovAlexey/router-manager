@@ -82,8 +82,7 @@ func (s Service) Run(ctx context.Context) error {
 			return fmt.Errorf("vpn-router не найден после установки: %w", err)
 		}
 	}
-	fmt.Fprintln(s.Stdout, "Готово. Следующая команда:")
-	fmt.Fprintln(s.Stdout, "sudo vpn-router setup")
+	fmt.Fprintln(s.Stdout, "Готово. Если настройка ещё не выполнена, запустите sudo vpn-router.")
 	return nil
 }
 

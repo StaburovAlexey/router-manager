@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -47,6 +48,13 @@ func NewRoot(opts Options) *cobra.Command {
 		SilenceUsage:  true,
 		SilenceErrors: true,
 		RunE: func(cmd *cobra.Command, args []string) error {
+			if shouldRunInitialSetup(opts.Paths) {
+				fmt.Fprintln(cmd.OutOrStdout(), "Первый запуск: запускаю подготовку системы и настройку.")
+				if err := (bootstrap.Service{Paths: opts.Paths, Runner: opts.Runner, Stdout: cmd.OutOrStdout()}).Run(ctx); err != nil {
+					return err
+				}
+				return (setup.Service{Paths: opts.Paths, Runner: opts.Runner, In: os.Stdin, Out: cmd.OutOrStdout()}).Run(ctx)
+			}
 			return tui.Run(ctx, opts.Paths, opts.Runner)
 		},
 	}
@@ -80,8 +88,9 @@ func restoreNetworkCmd(ctx context.Context, opts Options) *cobra.Command {
 
 func bootstrapCmd(ctx context.Context, opts Options) *cobra.Command {
 	return &cobra.Command{
-		Use:   "bootstrap",
-		Short: "Подготовить систему и установить vpn-router",
+		Hidden: true,
+		Use:    "bootstrap",
+		Short:  "Подготовить систему и установить vpn-router",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return (bootstrap.Service{Paths: opts.Paths, Runner: opts.Runner, Stdout: cmd.OutOrStdout()}).Run(ctx)
 		},
@@ -90,8 +99,9 @@ func bootstrapCmd(ctx context.Context, opts Options) *cobra.Command {
 
 func setupCmd(ctx context.Context, opts Options) *cobra.Command {
 	return &cobra.Command{
-		Use:   "setup",
-		Short: "Пошаговая настройка мини-ПК, RU и foreign-серверов",
+		Hidden: true,
+		Use:    "setup",
+		Short:  "Пошаговая настройка мини-ПК, RU и foreign-серверов",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return (setup.Service{Paths: opts.Paths, Runner: opts.Runner, In: os.Stdin, Out: cmd.OutOrStdout()}).Run(ctx)
 		},
@@ -619,6 +629,21 @@ func askForeignServer(out io.Writer) config.ForeignServer {
 		SSHPort: promptInt(reader, out, "SSH port", 22),
 		VPNPort: promptInt(reader, out, "VPN port", 443),
 	}
+}
+
+func shouldRunInitialSetup(paths config.Paths) bool {
+	cfg, err := config.Load(paths)
+	if err != nil {
+		return false
+	}
+	if _, err := os.Stat(paths.Config); errors.Is(err, os.ErrNotExist) {
+		return true
+	}
+	servers, err := config.LoadForeign(paths)
+	if err != nil {
+		return false
+	}
+	return cfg.MiniPC.APInterface == "" || cfg.RUServer.IP == "" || cfg.Reality.UUID == "" || len(servers.Servers) == 0
 }
 
 func printForeignList(cmd *cobra.Command, paths config.Paths) error {
