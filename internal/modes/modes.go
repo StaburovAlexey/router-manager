@@ -21,7 +21,7 @@ func EnableVPN(ctx context.Context, runner shell.Runner, paths config.Paths) err
 		return err
 	}
 	if cfg.RUServer.IP == "" {
-		return fmt.Errorf("RU-сервер не настроен")
+		return fmt.Errorf("входной VPN-сервер не настроен")
 	}
 	if err := ensureReality(&cfg); err != nil {
 		return err
@@ -69,7 +69,7 @@ func ensureReality(cfg *config.Config) error {
 		cfg.Reality.UUID = uuid
 	}
 	if cfg.Reality.SNI == "" || cfg.Reality.PublicKey == "" || cfg.Reality.ShortID == "" {
-		return fmt.Errorf("REALITY параметры RU-сервера не настроены")
+		return fmt.Errorf("REALITY параметры входного VPN-сервера не настроены")
 	}
 	return nil
 }

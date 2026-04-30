@@ -42,7 +42,7 @@ func Collect(ctx context.Context, runner shell.Runner, paths config.Paths) []Fin
 		if status := system.ServiceStatus(ctx, runner, service); status == "active" {
 			findings = append(findings, Finding{
 				Title:  fmt.Sprintf("Служба %s уже active", service),
-				Detail: "setup будет управлять этой службой и может перезапустить её со своими конфигами.",
+				Detail: "vpn-router будет управлять этой службой и может перезапустить её со своими конфигами.",
 			})
 		}
 	}

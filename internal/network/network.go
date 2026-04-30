@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"time"
 
 	"vpn-router/internal/config"
 	"vpn-router/internal/shell"
@@ -34,7 +35,7 @@ func DefaultWANInterface(ctx context.Context, runner shell.Runner) (string, erro
 			return fields[i+1], nil
 		}
 	}
-	return "", fmt.Errorf("не удалось определить WAN interface из default route")
+	return "", fmt.Errorf("не удалось определить входящий интернет из default route")
 }
 
 type InterfaceInfo struct {
@@ -117,14 +118,14 @@ func ipv4Addrs(ctx context.Context, runner shell.Runner, iface string) []string 
 
 func HasInternet(ctx context.Context, runner shell.Runner) error {
 	if err := runner.Run(ctx, "ping", "-c", "1", "-W", "3", "1.1.1.1"); err != nil {
-		return fmt.Errorf("нет доступа в интернет через Ethernet: %w", err)
+		return fmt.Errorf("нет доступа в интернет на мини-ПК: %w", err)
 	}
 	return nil
 }
 
 func ConfigureLANInterface(ctx context.Context, runner shell.Runner, cfg config.Config) error {
 	if cfg.MiniPC.APInterface == "" {
-		return fmt.Errorf("AP interface не настроен")
+		return fmt.Errorf("Wi-Fi адаптер для раздачи не настроен")
 	}
 	gateway, err := GatewayCIDR(cfg.MiniPC.LANGateway, cfg.MiniPC.LANCIDR)
 	if err != nil {
@@ -169,7 +170,9 @@ func GatewayCIDR(gateway string, lanCIDR string) (string, error) {
 }
 
 func PublicIP(ctx context.Context, runner shell.Runner) string {
-	out, err := runner.Output(ctx, "curl", "-fsS", "--max-time", "5", "https://api.ipify.org")
+	ctx, cancel := context.WithTimeout(ctx, 3*time.Second)
+	defer cancel()
+	out, err := runner.Output(ctx, "curl", "-fsS", "--connect-timeout", "1", "--max-time", "2", "https://api.ipify.org")
 	if err != nil {
 		return "не удалось определить"
 	}

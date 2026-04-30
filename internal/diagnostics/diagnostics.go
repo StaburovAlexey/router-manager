@@ -63,23 +63,96 @@ func Collect(ctx context.Context, runner shell.Runner, paths config.Paths) (Stat
 
 func Format(status Status) string {
 	var b strings.Builder
+	fmt.Fprintln(&b, "Краткий статус:")
+	fmt.Fprintf(&b, "Интернет на устройстве: %s\n", internetSummary(status))
+	fmt.Fprintf(&b, "Wi-Fi раздача: %s\n", wifiSummary(status))
+	fmt.Fprintf(&b, "VPN: %s\n", vpnSummary(status))
+	fmt.Fprintf(&b, "DNS: %s\n", dnsSummary(status))
+	fmt.Fprintf(&b, "Клиентов Wi-Fi: %s\n", value(status.WiFiClientCount))
+	recommendations := recommendations(status)
+	if len(recommendations) > 0 {
+		fmt.Fprintln(&b)
+		fmt.Fprintln(&b, "Что проверить:")
+		for _, item := range recommendations {
+			fmt.Fprintf(&b, "- %s\n", item)
+		}
+	}
+	fmt.Fprintln(&b)
+	fmt.Fprintln(&b, "Технические детали:")
 	fmt.Fprintf(&b, "Текущий режим: %s\n", value(status.Mode))
-	fmt.Fprintf(&b, "WAN interface: %s\n", value(status.WANInterface))
-	fmt.Fprintf(&b, "AP interface: %s\n", value(status.APInterface))
+	fmt.Fprintf(&b, "Входящий интернет: %s\n", value(status.WANInterface))
+	fmt.Fprintf(&b, "Wi-Fi адаптер для раздачи: %s\n", value(status.APInterface))
 	fmt.Fprintf(&b, "Wi-Fi SSID: %s\n", value(status.SSID))
 	fmt.Fprintf(&b, "Wi-Fi: %s GHz, канал %d, ширина %d MHz\n", value(status.WiFiBand), status.WiFiChannel, status.WiFiWidth)
 	fmt.Fprintf(&b, "sing-box: %s\n", status.SingBox)
 	fmt.Fprintf(&b, "hostapd: %s\n", status.Hostapd)
 	fmt.Fprintf(&b, "dnsmasq: %s\n", status.Dnsmasq)
 	fmt.Fprintf(&b, "nftables: %s\n", status.Nftables)
-	fmt.Fprintf(&b, "RU server: %s\n", value(status.RUServer))
-	fmt.Fprintf(&b, "Foreign mode: %s\n", value(status.ForeignMode))
-	fmt.Fprintf(&b, "Selected foreign: %s\n", value(status.SelectedForeign))
-	fmt.Fprintf(&b, "Public IP: %s\n", value(status.PublicIP))
-	fmt.Fprintf(&b, "DNS status: %s\n", value(status.DNS))
-	fmt.Fprintf(&b, "Wi-Fi clients: %s\n", value(status.WiFiClientCount))
+	fmt.Fprintf(&b, "Входной VPN-сервер: %s\n", value(status.RUServer))
+	fmt.Fprintf(&b, "Режим выходных серверов: %s\n", value(status.ForeignMode))
+	fmt.Fprintf(&b, "Выбранный выходной сервер: %s\n", value(status.SelectedForeign))
+	fmt.Fprintf(&b, "Публичный IP: %s\n", value(status.PublicIP))
+	fmt.Fprintf(&b, "DNS: %s\n", value(status.DNS))
 	fmt.Fprintf(&b, "rfkill: %s\n", value(status.RFKill))
 	return b.String()
+}
+
+func internetSummary(status Status) string {
+	if status.PublicIP != "" && status.PublicIP != "не удалось определить" {
+		return "OK (" + status.PublicIP + ")"
+	}
+	return "ошибка"
+}
+
+func wifiSummary(status Status) string {
+	if status.Hostapd == "active" && status.Dnsmasq == "active" && status.RFKill == "ok" {
+		return "OK"
+	}
+	return "ошибка"
+}
+
+func vpnSummary(status Status) string {
+	switch status.Mode {
+	case "vpn":
+		if status.SingBox == "active" {
+			return "включён"
+		}
+		return "ошибка"
+	case "direct":
+		return "выключен, прямой интернет"
+	default:
+		return value(status.Mode)
+	}
+}
+
+func dnsSummary(status Status) string {
+	if status.DNS == "ok" {
+		return "OK"
+	}
+	return "ошибка"
+}
+
+func recommendations(status Status) []string {
+	var result []string
+	if internetSummary(status) == "ошибка" {
+		result = append(result, "на мини-ПК нет внешнего интернета или не определяется публичный IP")
+	}
+	if status.RFKill != "ok" {
+		result = append(result, "Wi-Fi заблокирован rfkill; выполните rfkill unblock wifi")
+	}
+	if status.Hostapd != "active" {
+		result = append(result, "Wi-Fi точка доступа не запущена; попробуйте перезапустить Wi-Fi")
+	}
+	if status.Dnsmasq != "active" {
+		result = append(result, "DHCP/DNS для Wi-Fi не запущен; проверьте логи dnsmasq")
+	}
+	if status.Mode == "vpn" && status.SingBox != "active" {
+		result = append(result, "VPN включён в настройках, но sing-box не запущен; откройте логи")
+	}
+	if status.DNS != "ok" {
+		result = append(result, "DNS не отвечает; перезапустите VPN-режим или проверьте логи sing-box")
+	}
+	return result
 }
 
 func Logs(ctx context.Context, runner shell.Runner) (string, error) {
@@ -91,7 +164,7 @@ func Logs(ctx context.Context, runner shell.Runner) (string, error) {
 }
 
 func dnsStatus(ctx context.Context, runner shell.Runner) string {
-	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	ctx, cancel := context.WithTimeout(ctx, 2*time.Second)
 	defer cancel()
 	if err := runner.Run(ctx, "resolvectl", "query", "example.com"); err == nil {
 		return "ok"
@@ -141,7 +214,9 @@ func ruState(ctx context.Context, runner shell.Runner, cfg config.Config) (strin
 	if cfg.RUServer.IP == "" {
 		return "не настроено", ""
 	}
-	out, err := runner.Output(ctx, "ssh", "-o", "BatchMode=yes", "-o", "ConnectTimeout=4", "-p", fmt.Sprint(cfg.RUServer.SSHPort), cfg.RUServer.SSHUser+"@"+cfg.RUServer.IP, "cat /etc/ru-vpn/state.json 2>/dev/null || true")
+	ctx, cancel := context.WithTimeout(ctx, 3*time.Second)
+	defer cancel()
+	out, err := runner.Output(ctx, "ssh", "-o", "BatchMode=yes", "-o", "ConnectTimeout=2", "-p", fmt.Sprint(cfg.RUServer.SSHPort), cfg.RUServer.SSHUser+"@"+cfg.RUServer.IP, "cat /etc/ru-vpn/state.json 2>/dev/null || true")
 	if err != nil || out == "" {
 		return "неизвестно", ""
 	}

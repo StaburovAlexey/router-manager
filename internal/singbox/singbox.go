@@ -177,7 +177,7 @@ func WriteRemoteRUState(ctx context.Context, ssh sshclient.Client, target sshcli
 func RemoteRealityPrivateKey(ctx context.Context, ssh sshclient.Client, target sshclient.Target) (string, error) {
 	out, err := ssh.Run(ctx, target, "cat /etc/sing-box/config.json")
 	if err != nil {
-		return "", fmt.Errorf("не удалось прочитать /etc/sing-box/config.json на RU-сервере: %w", err)
+		return "", fmt.Errorf("не удалось прочитать /etc/sing-box/config.json на входном VPN-сервере: %w", err)
 	}
 	key, err := ExtractRealityPrivateKey([]byte(out))
 	if err != nil {

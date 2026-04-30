@@ -353,23 +353,23 @@ func (m model) items() []item {
 		}
 	case "ru":
 		return []item{
-			{"Статус RU", "ru-status"},
-			{"Включить auto-режим", "ru-auto"},
-			{"Выбрать foreign вручную", "ru-use"},
-			{"Проверить foreign", "ru-test"},
-			{"Показать foreign-серверы", "foreign-list"},
-			{"Логи RU", "ru-logs"},
-			{"Откатить RU-конфиг", "ru-rollback"},
+			{"Статус входного сервера", "ru-status"},
+			{"Автоматически выбирать выходной сервер", "ru-auto"},
+			{"Выбрать выходной сервер вручную", "ru-use"},
+			{"Проверить выходной сервер", "ru-test"},
+			{"Показать выходные серверы", "foreign-list"},
+			{"Логи входного сервера", "ru-logs"},
+			{"Откатить конфиг входного сервера", "ru-rollback"},
 			{"Назад", "back"},
 		}
 	case "foreign":
 		return []item{
-			{"Показать foreign-серверы", "foreign-list"},
-			{"Переключить RU на foreign", "menu:foreign-switch"},
-			{"Добавить foreign-сервер", "foreign-add"},
-			{"Проверить SSH foreign", "foreign-test"},
-			{"Удалить foreign из схемы", "foreign-remove"},
-			{"Очистить foreign VPS", "foreign-cleanup"},
+			{"Показать выходные серверы", "foreign-list"},
+			{"Переключить входной сервер на выходной", "menu:foreign-switch"},
+			{"Добавить выходной сервер", "foreign-add"},
+			{"Проверить SSH выходного сервера", "foreign-test"},
+			{"Удалить выходной сервер из схемы", "foreign-remove"},
+			{"Очистить VPS выходного сервера", "foreign-cleanup"},
 			{"Назад", "back"},
 		}
 	case "foreign-switch":
@@ -391,7 +391,7 @@ func (m model) items() []item {
 	case "backup":
 		return []item{
 			{"Показать локальные backups", "backup-list"},
-			{"Откатить RU-конфиг", "ru-rollback"},
+			{"Откатить конфиг входного сервера", "ru-rollback"},
 			{"Назад", "back"},
 		}
 	default:
@@ -400,11 +400,11 @@ func (m model) items() []item {
 			{"Включить VPN-режим", "vpn"},
 			{"Отключить VPN / включить прямой интернет", "direct"},
 			{"Логи", "logs"},
-			{"Информация и VLESS-ссылка", "info"},
+			{"Информация и QR-код", "info"},
 			{"QR-код", "qr"},
 			{"Правила сайтов без VPN", "menu:direct-rules"},
-			{"Управление RU-сервером", "menu:ru"},
-			{"Foreign-серверы", "menu:foreign"},
+			{"Входной VPN-сервер", "menu:ru"},
+			{"Выходные VPN-серверы", "menu:foreign"},
 			{"Настройки Wi-Fi роутера", "menu:wifi"},
 			{"Резервные копии и откат", "menu:backup"},
 			{"Откатить локальную сеть до состояния без приложения", "restore-network"},
@@ -419,11 +419,11 @@ func (m model) menuTitle() string {
 	case "direct-rules":
 		return "правила без VPN"
 	case "ru":
-		return "RU-сервер"
+		return "входной VPN-сервер"
 	case "foreign":
-		return "foreign-серверы"
+		return "выходные VPN-серверы"
 	case "foreign-switch":
-		return "выбор foreign"
+		return "выбор выходного сервера"
 	case "wifi":
 		return "Wi-Fi"
 	case "backup":
@@ -468,7 +468,7 @@ func (m model) run(action string) model {
 	if strings.HasPrefix(action, "ru-use:") {
 		name := strings.TrimPrefix(action, "ru-use:")
 		err := m.ruService().Use(m.ctx, name)
-		return m.withResult(fmt.Sprintf("RU переключён на %s.", name), err).setMenu("foreign")
+		return m.withResult(fmt.Sprintf("Входной сервер переключён на %s.", name), err).setMenu("foreign")
 	}
 
 	switch action {
@@ -498,26 +498,26 @@ func (m model) run(action string) model {
 		return m.withResult(out, err)
 	case "ru-auto":
 		err := m.ruService().Auto(m.ctx)
-		return m.withResult("RU auto-режим включён.", err)
+		return m.withResult("Автоматический выбор выходного сервера включён.", err)
 	case "ru-use":
-		return m.startPrompt("Выбрать foreign", "Имя foreign-сервера", m.firstForeignName(), "ru-use")
+		return m.startPrompt("Выбрать выходной сервер", "Имя выходного сервера", m.firstForeignName(), "ru-use")
 	case "ru-test":
-		return m.startPrompt("Проверить foreign", "Имя foreign-сервера", m.firstForeignName(), "ru-test")
+		return m.startPrompt("Проверить выходной сервер", "Имя выходного сервера", m.firstForeignName(), "ru-test")
 	case "ru-logs":
 		out, err := m.ruService().Logs(m.ctx)
 		return m.withResult(out, err)
 	case "ru-rollback":
-		return m.startConfirm("Откат RU", "Будет восстановлен последний backup /etc/sing-box/config.json на RU-сервере.", "ru-rollback", "", nil)
+		return m.startConfirm("Откат входного сервера", "Будет восстановлен последний backup /etc/sing-box/config.json на входном VPN-сервере.", "ru-rollback", "", nil)
 	case "foreign-list":
 		return m.showForeignList()
 	case "foreign-add":
 		return m.startForeignForm()
 	case "foreign-test":
-		return m.startPrompt("Проверить foreign", "Имя foreign-сервера", m.firstForeignName(), "foreign-test")
+		return m.startPrompt("Проверить выходной сервер", "Имя выходного сервера", m.firstForeignName(), "foreign-test")
 	case "foreign-remove":
-		return m.startPrompt("Удалить foreign", "Имя foreign-сервера", m.firstForeignName(), "foreign-remove")
+		return m.startPrompt("Удалить выходной сервер", "Имя выходного сервера", m.firstForeignName(), "foreign-remove")
 	case "foreign-cleanup":
-		return m.startPrompt("Очистить foreign VPS", "Имя foreign-сервера", m.firstForeignName(), "foreign-cleanup")
+		return m.startPrompt("Очистить VPS выходного сервера", "Имя выходного сервера", m.firstForeignName(), "foreign-cleanup")
 	case "wifi-status":
 		return m.showWiFiStatus()
 	case "wifi-scan":
@@ -570,7 +570,7 @@ func (m model) runPrompt(action string, value string) model {
 		return m.withResult("Правило удалено.", err)
 	case "ru-use":
 		err := m.ruService().Use(m.ctx, value)
-		return m.withResult(fmt.Sprintf("RU переключён на %s.", value), err)
+		return m.withResult(fmt.Sprintf("Входной сервер переключён на %s.", value), err)
 	case "ru-test":
 		err := m.ruService().Test(m.ctx, value)
 		return m.withResult("Проверка успешна.", err)
@@ -578,9 +578,9 @@ func (m model) runPrompt(action string, value string) model {
 		err := m.foreignService().Test(m.ctx, value)
 		return m.withResult("Проверка успешна.", err)
 	case "foreign-remove":
-		return m.startConfirm("Удалить foreign", "Сервер будет удалён из схемы. Если он выбран на RU вручную, RU будет переключён в auto.", "foreign-remove", value, nil)
+		return m.startConfirm("Удалить выходной сервер", "Сервер будет удалён из схемы. Если он выбран вручную, входной сервер будет переключён в автоматический режим.", "foreign-remove", value, nil)
 	case "foreign-cleanup":
-		return m.startConfirm("Очистить foreign VPS", "На foreign будет остановлен sing-box и активный config будет перенесён в backup. Продолжить?", "foreign-cleanup", value, nil)
+		return m.startConfirm("Очистить VPS выходного сервера", "На выходном сервере будет остановлен sing-box и активный config будет перенесён в backup.", "foreign-cleanup", value, nil)
 	case "wifi-channel":
 		channel, err := strconv.Atoi(value)
 		if err != nil {
@@ -613,7 +613,7 @@ func (m model) runForm(form formState) model {
 			SSHPort: sshPort,
 			VPNPort: vpnPort,
 		})
-		return m.withResult(fmt.Sprintf("Foreign-сервер добавлен: %s, SNI: %s", added.Name, added.Reality.SNI), err)
+		return m.withResult(fmt.Sprintf("Выходной сервер добавлен: %s, SNI: %s", added.Name, added.Reality.SNI), err)
 	default:
 		return m
 	}
@@ -623,13 +623,13 @@ func (m model) runConfirm(confirm confirmState) model {
 	switch confirm.action {
 	case "ru-rollback":
 		err := m.ruService().Rollback(m.ctx)
-		return m.withResult("Откат RU выполнен.", err)
+		return m.withResult("Откат входного сервера выполнен.", err)
 	case "foreign-remove":
 		err := m.foreignService().Remove(m.ctx, confirm.value, true)
-		return m.withResult("Foreign-сервер удалён.", err)
+		return m.withResult("Выходной сервер удалён.", err)
 	case "foreign-cleanup":
 		err := m.foreignService().Cleanup(m.ctx, confirm.value)
-		return m.withResult("Очистка foreign завершена.", err)
+		return m.withResult("Очистка выходного сервера завершена.", err)
 	case "wifi-auto-channel":
 		channel, _ := strconv.Atoi(confirm.params["channel"])
 		width, _ := strconv.Atoi(confirm.params["width"])
@@ -672,14 +672,14 @@ func (m model) startConfirm(title string, body string, action string, value stri
 func (m model) startForeignForm() model {
 	m.mode = modeForm
 	m.form = formState{
-		title:  "Добавить foreign-сервер",
+		title:  "Добавить выходной сервер",
 		action: "foreign-add",
 		fields: []formField{
-			{key: "name", label: "Имя", def: "de-1"},
-			{key: "ip", label: "IP", def: ""},
-			{key: "ssh_user", label: "SSH user", def: "root"},
-			{key: "ssh_port", label: "SSH port", def: "22"},
-			{key: "vpn_port", label: "VPN port", def: "443"},
+			{key: "name", label: "Имя выходного сервера", def: "out-1"},
+			{key: "ip", label: "IP выходного VPN-сервера", def: ""},
+			{key: "ssh_user", label: "SSH user выходного сервера", def: "root"},
+			{key: "ssh_port", label: "SSH port выходного сервера", def: "22"},
+			{key: "vpn_port", label: "VPN port выходного сервера", def: "443"},
 		},
 		values: map[string]string{},
 	}
@@ -706,7 +706,7 @@ func (m model) foreignService() foreign.Service {
 func (m model) showQR() model {
 	data, err := os.ReadFile(m.paths.ClientLink)
 	if err != nil {
-		return m.withResult("", fmt.Errorf("VLESS-ссылка не найдена: сначала выполните setup"))
+		return m.withResult("", fmt.Errorf("QR-ссылка не найдена: сначала запустите sudo vpn-router"))
 	}
 	out, err := m.runner.Output(m.ctx, "qrencode", "-t", "ANSIUTF8", strings.TrimSpace(string(data)))
 	return m.withResult(out, err)
@@ -730,7 +730,7 @@ func (m model) showForeignList() model {
 		return m.withResult("", err)
 	}
 	if len(servers.Servers) == 0 {
-		return m.withResult("Foreign-серверы не добавлены.", nil)
+		return m.withResult("Выходные серверы не добавлены.", nil)
 	}
 	var b strings.Builder
 	for i, server := range servers.Servers {
@@ -742,7 +742,7 @@ func (m model) showForeignList() model {
 func (m model) foreignSwitchItems() []item {
 	servers, err := config.LoadForeign(m.paths)
 	if err != nil || len(servers.Servers) == 0 {
-		return []item{{"Foreign-серверы не добавлены", "foreign-list"}, {"Назад", "back"}}
+		return []item{{"Выходные серверы не добавлены", "foreign-list"}, {"Назад", "back"}}
 	}
 	items := make([]item, 0, len(servers.Servers)+1)
 	for _, server := range servers.Servers {
@@ -760,7 +760,7 @@ func (m model) showWiFiStatus() model {
 	if err != nil {
 		return m.withResult("", err)
 	}
-	text := fmt.Sprintf("SSID: %s\nДиапазон: %s GHz\nКанал: %d\nШирина: %d MHz\nAP interface: %s\n",
+	text := fmt.Sprintf("SSID: %s\nДиапазон: %s GHz\nКанал: %d\nШирина: %d MHz\nWi-Fi адаптер для раздачи: %s\n",
 		cfg.MiniPC.SSID, cfg.WiFi.Band, cfg.WiFi.Channel, cfg.WiFi.ChannelWidth, cfg.MiniPC.APInterface)
 	return m.withResult(text, nil)
 }

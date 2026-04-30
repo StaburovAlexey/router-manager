@@ -25,18 +25,21 @@ func Generate(paths config.Paths) (string, error) {
 	var b strings.Builder
 	fmt.Fprintln(&b, "VPN Router Manager")
 	fmt.Fprintln(&b)
-	fmt.Fprintln(&b, "Настроено на мини-ПК:")
-	fmt.Fprintf(&b, "  WAN interface: %s\n", show(cfg.MiniPC.WANInterface))
-	fmt.Fprintf(&b, "  AP interface: %s\n", show(cfg.MiniPC.APInterface))
-	fmt.Fprintf(&b, "  Wi-Fi SSID: %s\n", show(cfg.MiniPC.SSID))
-	fmt.Fprintf(&b, "  Wi-Fi band: %s GHz\n", show(cfg.WiFi.Band))
-	fmt.Fprintf(&b, "  Wi-Fi channel: %d\n", cfg.WiFi.Channel)
-	fmt.Fprintf(&b, "  Wi-Fi channel width: %d MHz\n", cfg.WiFi.ChannelWidth)
-	fmt.Fprintf(&b, "  LAN subnet: %s\n", show(cfg.MiniPC.LANCIDR))
-	fmt.Fprintf(&b, "  LAN gateway: %s\n", show(cfg.MiniPC.LANGateway))
+	fmt.Fprintln(&b, "Настройка завершена.")
 	fmt.Fprintln(&b)
-	fmt.Fprintf(&b, "RU-сервер: %s:%d, SSH %s:%d\n", show(cfg.RUServer.IP), cfg.RUServer.VPNPort, show(cfg.RUServer.SSHUser), cfg.RUServer.SSHPort)
-	fmt.Fprintln(&b, "Foreign-серверы:")
+	fmt.Fprintln(&b, "Что делать дальше:")
+	fmt.Fprintf(&b, "  1. Подключите телефон или ноутбук к Wi-Fi сети %s.\n", show(cfg.MiniPC.SSID))
+	fmt.Fprintln(&b, "  2. Откройте меню: sudo vpn-router")
+	fmt.Fprintln(&b, "  3. Выберите \"Включить VPN-режим\" и проверьте интернет.")
+	fmt.Fprintln(&b)
+	fmt.Fprintln(&b, "Wi-Fi раздача:")
+	fmt.Fprintf(&b, "  Сеть: %s\n", show(cfg.MiniPC.SSID))
+	fmt.Fprintf(&b, "  Адаптер: %s\n", show(cfg.MiniPC.APInterface))
+	fmt.Fprintf(&b, "  Диапазон: %s GHz, канал %d, ширина %d MHz\n", show(cfg.WiFi.Band), cfg.WiFi.Channel, cfg.WiFi.ChannelWidth)
+	fmt.Fprintf(&b, "  Подсеть: %s, шлюз: %s\n", show(cfg.MiniPC.LANCIDR), show(cfg.MiniPC.LANGateway))
+	fmt.Fprintln(&b)
+	fmt.Fprintf(&b, "Входной VPN-сервер: %s:%d, SSH %s:%d\n", show(cfg.RUServer.IP), cfg.RUServer.VPNPort, show(cfg.RUServer.SSHUser), cfg.RUServer.SSHPort)
+	fmt.Fprintln(&b, "Выходные VPN-серверы:")
 	if len(foreignServers.Servers) == 0 {
 		fmt.Fprintln(&b, "  не добавлены")
 	}
@@ -45,10 +48,9 @@ func Generate(paths config.Paths) (string, error) {
 	}
 	fmt.Fprintln(&b)
 	fmt.Fprintf(&b, "Текущий режим: %s\n", show(cfg.CurrentMode))
-	fmt.Fprintf(&b, "VPN policy: %s, custom direct: %t\n", cfg.VPNPolicy.Mode, cfg.VPNPolicy.CustomDirectEnabled)
 	fmt.Fprintf(&b, "SNI: auto, выбран: %s\n", show(cfg.Reality.SNI))
 	fmt.Fprintln(&b)
-	fmt.Fprintln(&b, "VLESS/REALITY ссылка:")
+	fmt.Fprintln(&b, "Ссылка для QR-кода:")
 	if clientLink == "" {
 		fmt.Fprintln(&b, "  ещё не создана")
 	} else {
@@ -60,15 +62,10 @@ func Generate(paths config.Paths) (string, error) {
 	fmt.Fprintln(&b)
 	fmt.Fprintln(&b, "Основные команды:")
 	for _, command := range []string{
-		"sudo vpn-router",
-		"sudo vpn-router bootstrap",
-		"sudo vpn-router setup",
-		"sudo vpn-router vpn",
-		"sudo vpn-router direct",
-		"sudo vpn-router status",
-		"sudo vpn-router logs",
-		"sudo vpn-router info",
-		"sudo vpn-router qr",
+		"sudo vpn-router                  открыть меню",
+		"sudo vpn-router status           проверить состояние",
+		"sudo vpn-router qr               показать QR-код",
+		"sudo vpn-router restore-network  откатить локальную сеть",
 	} {
 		fmt.Fprintf(&b, "  %s\n", command)
 	}

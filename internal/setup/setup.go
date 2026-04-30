@@ -51,31 +51,33 @@ func (s Service) Run(ctx context.Context) error {
 		return err
 	}
 
+	printStep(s.Out, 1, 5, "Проверка устройства")
 	findings := preflight.Collect(ctx, s.Runner, s.Paths)
 	if len(findings) > 0 {
 		fmt.Fprintln(s.Out, preflight.Format(findings))
 		if !confirm.AskYesNo(reader, s.Out, "Подтвердите перезапись") {
-			return fmt.Errorf("setup остановлен: перезапись существующих настроек не подтверждена")
+			return fmt.Errorf("настройка остановлена: перезапись существующих настроек не подтверждена")
 		}
 		if err := preflight.PrepareOverwrite(ctx, s.Runner); err != nil {
 			return err
 		}
 	}
 
-	fmt.Fprintln(s.Out, "Для управления RU и foreign-серверами нужен SSH-доступ по ключам.")
-	fmt.Fprintln(s.Out, "Важно: setup запущен через sudo, поэтому приложение проверяет SSH от root-пользователя мини-ПК.")
+	printStep(s.Out, 2, 5, "SSH-доступ к VPN-серверам")
+	fmt.Fprintln(s.Out, "Для управления входным и выходными VPN-серверами нужен SSH-доступ по ключам.")
+	fmt.Fprintln(s.Out, "Важно: настройка запущена через sudo, поэтому приложение проверяет SSH от root-пользователя мини-ПК.")
 	fmt.Fprintln(s.Out, "Обычный `ssh root@SERVER_IP` от пользователя ubuntu не гарантирует, что `sudo ssh ...` тоже работает.")
 	fmt.Fprintln(s.Out, `ssh-keygen -t ed25519 -C "vpn-router"`)
-	fmt.Fprintln(s.Out, `ssh-copy-id -p 22 root@RU_SERVER_IP`)
-	fmt.Fprintln(s.Out, `ssh-copy-id -p 22 root@FOREIGN_SERVER_IP`)
+	fmt.Fprintln(s.Out, `ssh-copy-id -p 22 root@INBOUND_SERVER_IP`)
+	fmt.Fprintln(s.Out, `ssh-copy-id -p 22 root@OUTBOUND_SERVER_IP`)
 	fmt.Fprintln(s.Out, "Проверяйте доступ именно так:")
-	fmt.Fprintln(s.Out, `sudo ssh -o BatchMode=yes -o ConnectTimeout=8 -p 22 root@RU_SERVER_IP "echo ok"`)
-	fmt.Fprintln(s.Out, `sudo ssh -o BatchMode=yes -o ConnectTimeout=8 -p 22 root@FOREIGN_SERVER_IP "echo ok"`)
+	fmt.Fprintln(s.Out, `sudo ssh -o BatchMode=yes -o ConnectTimeout=8 -p 22 root@INBOUND_SERVER_IP "echo ok"`)
+	fmt.Fprintln(s.Out, `sudo ssh -o BatchMode=yes -o ConnectTimeout=8 -p 22 root@OUTBOUND_SERVER_IP "echo ok"`)
 	fmt.Fprintln(s.Out, "Если будет Host key verification failed, добавьте host key в /root/.ssh/known_hosts:")
-	fmt.Fprintln(s.Out, `sudo ssh-keyscan -H -p 22 RU_SERVER_IP | sudo tee -a /root/.ssh/known_hosts >/dev/null`)
-	fmt.Fprintln(s.Out, `sudo ssh-keyscan -H -p 22 FOREIGN_SERVER_IP | sudo tee -a /root/.ssh/known_hosts >/dev/null`)
-	if answer := ask(reader, s.Out, "Введите done после настройки SSH-ключей", ""); answer != "done" {
-		return fmt.Errorf("setup остановлен: SSH-ключи не подтверждены")
+	fmt.Fprintln(s.Out, `sudo ssh-keyscan -H -p 22 INBOUND_SERVER_IP | sudo tee -a /root/.ssh/known_hosts >/dev/null`)
+	fmt.Fprintln(s.Out, `sudo ssh-keyscan -H -p 22 OUTBOUND_SERVER_IP | sudo tee -a /root/.ssh/known_hosts >/dev/null`)
+	if !confirm.AskYesNo(reader, s.Out, "SSH-ключи настроены и можно проверить доступ?") {
+		return fmt.Errorf("настройка остановлена: SSH-ключи не подтверждены")
 	}
 
 	if err := network.HasInternet(ctx, s.Runner); err != nil {
@@ -84,6 +86,7 @@ func (s Service) Run(ctx context.Context) error {
 	currentWAN := describeAutoWAN(ctx, s.Runner, s.Out)
 	cfg.MiniPC.WANInterface = "auto"
 
+	printStep(s.Out, 3, 5, "Wi-Fi для раздачи")
 	cfg.MiniPC.APInterface = chooseAPInterface(ctx, s.Runner, reader, s.Out, cfg.MiniPC.APInterface, currentWAN)
 	if err := confirmAPInterfaceDisruption(ctx, s.Runner, reader, s.Out, cfg.MiniPC.APInterface, currentWAN); err != nil {
 		return err
@@ -96,31 +99,34 @@ func (s Service) Run(ctx context.Context) error {
 
 	cfg.MiniPC.SSID = ask(reader, s.Out, "SSID Wi-Fi сети", cfg.MiniPC.SSID)
 	cfg.WiFi.Password = askPassword(reader, s.Out, "Пароль Wi-Fi")
-	cfg.MiniPC.LANCIDR = ask(reader, s.Out, "LAN subnet", cfg.MiniPC.LANCIDR)
-	cfg.MiniPC.LANGateway = ask(reader, s.Out, "LAN gateway", cfg.MiniPC.LANGateway)
-	cfg.WiFi.Country = ask(reader, s.Out, "Regulatory domain", cfg.WiFi.Country)
+	if confirm.AskYesNo(reader, s.Out, "Показать расширенные настройки сети?") {
+		cfg.MiniPC.LANCIDR = ask(reader, s.Out, "LAN subnet", cfg.MiniPC.LANCIDR)
+		cfg.MiniPC.LANGateway = ask(reader, s.Out, "LAN gateway", cfg.MiniPC.LANGateway)
+		cfg.WiFi.Country = ask(reader, s.Out, "Regulatory domain", cfg.WiFi.Country)
+	}
 	if err := chooseWiFiSettings(&cfg, apCaps, reader, s.Out); err != nil {
 		return err
 	}
 
-	cfg.RUServer.IP = ask(reader, s.Out, "RU server IP", cfg.RUServer.IP)
-	cfg.RUServer.SSHUser = ask(reader, s.Out, "RU SSH user", defaultString(cfg.RUServer.SSHUser, "root"))
-	cfg.RUServer.SSHPort = askInt(reader, s.Out, "RU SSH port", defaultInt(cfg.RUServer.SSHPort, 22))
-	cfg.RUServer.VPNPort = askInt(reader, s.Out, "RU VPN port", defaultInt(cfg.RUServer.VPNPort, 443))
+	printStep(s.Out, 4, 5, "Входной VPN-сервер")
+	cfg.RUServer.IP = ask(reader, s.Out, "IP входного VPN-сервера", cfg.RUServer.IP)
+	cfg.RUServer.SSHUser = ask(reader, s.Out, "SSH user входного сервера", defaultString(cfg.RUServer.SSHUser, "root"))
+	cfg.RUServer.SSHPort = askInt(reader, s.Out, "SSH port входного сервера", defaultInt(cfg.RUServer.SSHPort, 22))
+	cfg.RUServer.VPNPort = askInt(reader, s.Out, "VPN port входного сервера", defaultInt(cfg.RUServer.VPNPort, 443))
 
 	ssh := sshclient.Client{Runner: s.Runner}
 	ruTarget := sshclient.Target{User: cfg.RUServer.SSHUser, IP: cfg.RUServer.IP, Port: cfg.RUServer.SSHPort}
-	if err := waitForSSH(ctx, ssh, ruTarget, "RU-сервер", reader, s.Out); err != nil {
+	if err := waitForSSH(ctx, ssh, ruTarget, "входной VPN-сервер", reader, s.Out); err != nil {
 		return err
 	}
-	if findings := preflight.CollectRemote(ctx, ssh, ruTarget, "RU-сервер"); len(findings) > 0 {
+	if findings := preflight.CollectRemote(ctx, ssh, ruTarget, "входной VPN-сервер"); len(findings) > 0 {
 		fmt.Fprintln(s.Out, preflight.Format(findings))
-		if !confirm.AskYesNo(reader, s.Out, "Подтвердите перезапись RU") {
-			return fmt.Errorf("setup остановлен: перезапись RU-сервера не подтверждена")
+		if !confirm.AskYesNo(reader, s.Out, "Подтвердите перезапись входного сервера") {
+			return fmt.Errorf("настройка остановлена: перезапись входного сервера не подтверждена")
 		}
 	}
 	if err := (singbox.Installer{}).EnsureRemoteInstalled(ctx, ssh, ruTarget); err != nil {
-		return fmt.Errorf("не удалось установить или проверить sing-box на RU-сервере: %w", err)
+		return fmt.Errorf("не удалось установить или проверить sing-box на входном VPN-сервере: %w", err)
 	}
 
 	if err := ensureRealityRuntime(ctx, &cfg); err != nil {
@@ -136,11 +142,12 @@ func (s Service) Run(ctx context.Context) error {
 		return err
 	}
 
+	printStep(s.Out, 5, 5, "Выходные VPN-серверы и запуск")
 	var addedForeign []config.ForeignServer
 	for index := 0; ; index++ {
 		if index == 0 {
-			fmt.Fprintln(s.Out, "Добавление foreign-сервера.")
-		} else if !confirm.AskYesNo(reader, s.Out, "Добавить ещё один foreign-сервер?") {
+			fmt.Fprintln(s.Out, "Добавление выходного VPN-сервера.")
+		} else if !confirm.AskYesNo(reader, s.Out, "Добавить ещё один выходной VPN-сервер?") {
 			break
 		}
 		added, err := configureForeign(ctx, s.Paths, s.Runner, ssh, reader, s.Out, cfg, ruPrivate, index)
@@ -155,7 +162,7 @@ func (s Service) Run(ctx context.Context) error {
 			return err
 		}
 		if len(servers.Servers) == 0 {
-			return fmt.Errorf("нужен хотя бы один foreign-сервер")
+			return fmt.Errorf("нужен хотя бы один выходной VPN-сервер")
 		}
 		if err := (foreign.Service{
 			Paths:      s.Paths,
@@ -193,10 +200,14 @@ func (s Service) Run(ctx context.Context) error {
 	}
 	fmt.Fprintln(s.Out)
 	for _, added := range addedForeign {
-		fmt.Fprintf(s.Out, "Foreign-сервер готов: %s, SNI: %s\n", added.Name, added.Reality.SNI)
+		fmt.Fprintf(s.Out, "Выходной VPN-сервер готов: %s, SNI: %s\n", added.Name, added.Reality.SNI)
 	}
 	fmt.Fprintln(s.Out, text)
 	return nil
+}
+
+func printStep(out io.Writer, current int, total int, title string) {
+	fmt.Fprintf(out, "\nШаг %d из %d: %s\n\n", current, total, title)
 }
 
 func ensureRealityRuntime(ctx context.Context, cfg *config.Config) error {
@@ -223,16 +234,16 @@ func ensureRealityRuntime(ctx context.Context, cfg *config.Config) error {
 }
 
 func configureForeign(ctx context.Context, paths config.Paths, runner shell.Runner, ssh sshclient.Client, reader *bufio.Reader, out io.Writer, cfg config.Config, ruPrivate string, index int) (config.ForeignServer, error) {
-	defaultName := "de-1"
+	defaultName := "out-1"
 	if index > 0 {
-		defaultName = fmt.Sprintf("foreign-%d", index+1)
+		defaultName = fmt.Sprintf("out-%d", index+1)
 	}
 	foreignServer := config.ForeignServer{
-		Name:    ask(reader, out, "Foreign name", defaultName),
-		IP:      ask(reader, out, "Foreign IP", ""),
-		SSHUser: ask(reader, out, "Foreign SSH user", "root"),
-		SSHPort: askInt(reader, out, "Foreign SSH port", 22),
-		VPNPort: askInt(reader, out, "Foreign VPN port", 443),
+		Name:    ask(reader, out, "Имя выходного сервера", defaultName),
+		IP:      ask(reader, out, "IP выходного VPN-сервера", ""),
+		SSHUser: ask(reader, out, "SSH user выходного сервера", "root"),
+		SSHPort: askInt(reader, out, "SSH port выходного сервера", 22),
+		VPNPort: askInt(reader, out, "VPN port выходного сервера", 443),
 	}
 	foreignAction, existingForeign, err := resolveForeignConflict(paths, &foreignServer, reader, out)
 	if err != nil {
@@ -244,13 +255,13 @@ func configureForeign(ctx context.Context, paths config.Paths, runner shell.Runn
 		foreignServer = existingForeign
 	}
 	foreignTarget := sshclient.Target{User: foreignServer.SSHUser, IP: foreignServer.IP, Port: foreignServer.SSHPort}
-	if err := waitForSSH(ctx, ssh, foreignTarget, "foreign-сервер", reader, out); err != nil {
+	if err := waitForSSH(ctx, ssh, foreignTarget, "выходной VPN-сервер", reader, out); err != nil {
 		return foreignServer, err
 	}
-	if findings := preflight.CollectRemote(ctx, ssh, foreignTarget, "foreign-сервер"); len(findings) > 0 && foreignAction != "use" {
+	if findings := preflight.CollectRemote(ctx, ssh, foreignTarget, "выходной VPN-сервер"); len(findings) > 0 && foreignAction != "use" {
 		fmt.Fprintln(out, preflight.Format(findings))
-		if !confirm.AskYesNo(reader, out, "Подтвердите перезапись foreign") {
-			return foreignServer, fmt.Errorf("setup остановлен: перезапись foreign-сервера не подтверждена")
+		if !confirm.AskYesNo(reader, out, "Подтвердите перезапись выходного сервера") {
+			return foreignServer, fmt.Errorf("настройка остановлена: перезапись выходного сервера не подтверждена")
 		}
 	}
 	service := foreign.Service{
@@ -286,7 +297,7 @@ func configureForeign(ctx context.Context, paths config.Paths, runner shell.Runn
 func generateRemoteRealityKeypair(ctx context.Context, ssh sshclient.Client, target sshclient.Target) (string, string, error) {
 	out, err := ssh.Run(ctx, target, "sing-box generate reality-keypair")
 	if err != nil {
-		return "", "", fmt.Errorf("не удалось сгенерировать REALITY keypair на RU-сервере: %w", err)
+		return "", "", fmt.Errorf("не удалось сгенерировать REALITY keypair на входном VPN-сервере: %w", err)
 	}
 	return parseKeypair(out)
 }
@@ -318,15 +329,10 @@ func waitForSSH(ctx context.Context, ssh sshclient.Client, target sshclient.Targ
 			fmt.Fprintf(out, "\nSSH-доступ к %s не работает.\n%v\n\n", label, err)
 		}
 		fmt.Fprintln(out, "Исправьте SSH-доступ в другой консоли, затем вернитесь сюда.")
-		answer := ask(reader, out, "Введите done для повторной проверки или abort для выхода", "")
-		switch strings.ToLower(answer) {
-		case "done":
+		if confirm.AskYesNo(reader, out, "Повторить проверку SSH?") {
 			continue
-		case "abort", "exit", "quit":
-			return fmt.Errorf("setup остановлен: SSH-доступ к %s не настроен", label)
-		default:
-			fmt.Fprintln(out, "Введите done или abort.")
 		}
+		return fmt.Errorf("настройка остановлена: SSH-доступ к %s не настроен", label)
 	}
 }
 
@@ -336,11 +342,11 @@ func resolveForeignConflict(paths config.Paths, server *config.ForeignServer, re
 		if err != nil || !found {
 			return "add", config.ForeignServer{}, err
 		}
-		fmt.Fprintf(out, "\nForeign-сервер с именем %q уже есть в конфиге.\n", server.Name)
+		fmt.Fprintf(out, "\nВыходной VPN-сервер с именем %q уже есть в конфиге.\n", server.Name)
 		fmt.Fprintf(out, "  сохранённый: %s:%d, SSH %s:%d, SNI %s\n", existing.IP, existing.VPNPort, existing.SSHUser, existing.SSHPort, showValue(existing.Reality.SNI))
 		fmt.Fprintf(out, "  введённый:   %s:%d, SSH %s:%d\n", server.IP, server.VPNPort, server.SSHUser, server.SSHPort)
 		fmt.Fprintln(out, "Выберите действие:")
-		fmt.Fprintln(out, "  1) использовать сохранённый foreign-сервер и продолжить")
+		fmt.Fprintln(out, "  1) использовать сохранённый выходной сервер и продолжить")
 		fmt.Fprintln(out, "  2) заменить сохранённый сервер введёнными данными")
 		fmt.Fprintln(out, "  3) ввести другое имя")
 		answer := ask(reader, out, "Действие: 1/2/3", "1")
@@ -350,7 +356,7 @@ func resolveForeignConflict(paths config.Paths, server *config.ForeignServer, re
 		case "2", "replace":
 			return "replace", existing, nil
 		case "3", "rename":
-			server.Name = ask(reader, out, "Foreign name", server.Name+"-2")
+			server.Name = ask(reader, out, "Имя выходного сервера", server.Name+"-2")
 		default:
 			fmt.Fprintln(out, "Введите 1, 2 или 3.")
 		}
@@ -511,7 +517,7 @@ func chooseWANInterface(ctx context.Context, runner shell.Runner, reader *bufio.
 		}
 		fmt.Fprintf(out, "  %d) %s  state=%s  ip=%s%s\n", i+1, iface.Name, iface.State, ip, marker)
 	}
-	return chooseByNumberOrName(reader, out, "WAN interface", defaultName, interfaceNames(interfaces))
+	return chooseByNumberOrName(reader, out, "Интерфейс входящего интернета", defaultName, interfaceNames(interfaces))
 }
 
 func describeAutoWAN(ctx context.Context, runner shell.Runner, out io.Writer) string {
@@ -532,15 +538,19 @@ func chooseAPInterface(ctx context.Context, runner shell.Runner, reader *bufio.R
 	}
 	netInfo := interfaceInfoMap(ctx, runner)
 	fmt.Fprintln(out)
-	fmt.Fprintln(out, "Выберите Wi-Fi адаптер, который будет раздавать интернет (AP).")
+	fmt.Fprintln(out, "Выберите Wi-Fi адаптер, который будет раздавать интернет.")
 	fmt.Fprintln(out, "Этот адаптер будет использоваться только как точка доступа.")
 	defaultName := current
-	if defaultName != "" && interfaceHasIPv4(netInfo[defaultName]) {
+	if defaultName != "" && (interfaceHasIPv4(netInfo[defaultName]) || isP2PInterface(interfaces, defaultName)) {
 		defaultName = ""
 	}
+	hasUsable := false
 	for i, iface := range interfaces {
 		info := netInfo[iface.Name]
-		if defaultName == "" && iface.Name != wan && !interfaceHasIPv4(info) {
+		if !isP2PType(iface.Type) {
+			hasUsable = true
+		}
+		if defaultName == "" && iface.Name != wan && !interfaceHasIPv4(info) && !isP2PType(iface.Type) {
 			defaultName = iface.Name
 		}
 		note := ""
@@ -550,15 +560,18 @@ func chooseAPInterface(ctx context.Context, runner shell.Runner, reader *bufio.R
 		if interfaceHasIPv4(info) {
 			note += " ВНИМАНИЕ: сейчас имеет IP " + strings.Join(info.IPv4, ", ")
 		}
-		if iface.Type != "" {
+		if isP2PType(iface.Type) {
+			note += " не подходит: P2P-device не используется hostapd"
+		} else if iface.Type != "" {
 			note += " type=" + iface.Type
 		}
 		fmt.Fprintf(out, "  %d) %s%s\n", i+1, iface.Name, note)
 	}
-	if defaultName == "" && len(interfaces) > 0 {
-		defaultName = interfaces[0].Name
+	if !hasUsable {
+		fmt.Fprintln(out, "В списке нет подходящего Wi-Fi интерфейса для точки доступа. P2P-device не подходит для hostapd.")
+		return ask(reader, out, "Wi-Fi адаптер для раздачи интернета", current)
 	}
-	return chooseByNumberOrName(reader, out, "AP Wi-Fi interface", defaultName, wifiNames(interfaces))
+	return chooseAPByNumberOrName(reader, out, defaultName, interfaces)
 }
 
 func confirmAPInterfaceDisruption(ctx context.Context, runner shell.Runner, reader *bufio.Reader, out io.Writer, apInterface string, wanInterface string) error {
@@ -577,8 +590,8 @@ func confirmAPInterfaceDisruption(ctx context.Context, runner shell.Runner, read
 		fmt.Fprintln(out, "Если вы подключены к устройству через этот Wi-Fi интерфейс, SSH-сессия оборвётся.")
 	}
 	fmt.Fprintln(out, "Рекомендуется выбрать отдельный USB Wi-Fi адаптер без IP-адреса для раздачи.")
-	if !confirm.AskYesNo(reader, out, "Продолжить с этим AP-интерфейсом?") {
-		return fmt.Errorf("setup остановлен: AP-интерфейс не подтверждён")
+	if !confirm.AskYesNo(reader, out, "Продолжить с этим Wi-Fi адаптером?") {
+		return fmt.Errorf("настройка остановлена: Wi-Fi адаптер для раздачи не подтверждён")
 	}
 	return nil
 }
@@ -635,6 +648,35 @@ func wifiNames(interfaces []wifi.InterfaceInfo) []string {
 		names = append(names, iface.Name)
 	}
 	return names
+}
+
+func chooseAPByNumberOrName(reader *bufio.Reader, out io.Writer, def string, interfaces []wifi.InterfaceInfo) string {
+	names := wifiNames(interfaces)
+	for {
+		answer := chooseByNumberOrName(reader, out, "Wi-Fi адаптер для раздачи", def, names)
+		if answer == "" {
+			fmt.Fprintln(out, "Нужно выбрать Wi-Fi адаптер для раздачи из списка.")
+			continue
+		}
+		if isP2PInterface(interfaces, answer) {
+			fmt.Fprintf(out, "%s является P2P-device и не подходит для точки доступа hostapd. Выберите обычный Wi-Fi интерфейс, например wlan0/wlp*/wlx* type=managed или type=AP.\n", answer)
+			continue
+		}
+		return answer
+	}
+}
+
+func isP2PInterface(interfaces []wifi.InterfaceInfo, name string) bool {
+	for _, iface := range interfaces {
+		if iface.Name == name {
+			return isP2PType(iface.Type)
+		}
+	}
+	return false
+}
+
+func isP2PType(value string) bool {
+	return strings.EqualFold(strings.TrimSpace(value), "P2P-device")
 }
 
 func askPassword(reader *bufio.Reader, out io.Writer, label string) string {

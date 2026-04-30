@@ -23,7 +23,7 @@ type Service struct {
 
 func (s Service) Add(ctx context.Context, server config.ForeignServer) (config.ForeignServer, error) {
 	if server.Name == "" {
-		return server, fmt.Errorf("имя foreign-сервера не может быть пустым")
+		return server, fmt.Errorf("имя выходного сервера не может быть пустым")
 	}
 	servers, err := config.LoadForeign(s.Paths)
 	if err != nil {
@@ -31,12 +31,12 @@ func (s Service) Add(ctx context.Context, server config.ForeignServer) (config.F
 	}
 	for _, existing := range servers.Servers {
 		if existing.Name == server.Name {
-			return server, fmt.Errorf("foreign-сервер %s уже существует", server.Name)
+			return server, fmt.Errorf("выходной сервер %s уже существует", server.Name)
 		}
 	}
 	target := sshclient.Target{User: server.SSHUser, IP: server.IP, Port: server.SSHPort}
 	if err := s.SSH.Check(ctx, target); err != nil {
-		return server, fmt.Errorf("SSH-доступ к foreign-серверу не работает: %w", err)
+		return server, fmt.Errorf("SSH-доступ к выходному серверу не работает: %w", err)
 	}
 	if server.Reality.SNI == "" {
 		server.Reality.SNI, err = s.SNI.Select(ctx)
@@ -75,7 +75,7 @@ func (s Service) Remove(ctx context.Context, name string, switchAuto bool) error
 	}
 	selected := s.currentRUSelected(ctx)
 	if selected == name && !switchAuto {
-		return fmt.Errorf("foreign-сервер %s выбран на RU вручную. Повторите с --switch-auto", name)
+		return fmt.Errorf("выходной сервер %s выбран вручную. Повторите с --switch-auto", name)
 	}
 	filtered := servers.Servers[:0]
 	found := false
@@ -87,7 +87,7 @@ func (s Service) Remove(ctx context.Context, name string, switchAuto bool) error
 		filtered = append(filtered, server)
 	}
 	if !found {
-		return fmt.Errorf("foreign-сервер %s не найден", name)
+		return fmt.Errorf("выходной сервер %s не найден", name)
 	}
 	servers.Servers = filtered
 	if selected == name && switchAuto {
@@ -131,11 +131,11 @@ type keypair struct {
 
 func (s Service) remoteKeypair(ctx context.Context, target sshclient.Target) (keypair, error) {
 	if err := (singbox.Installer{}).EnsureRemoteInstalled(ctx, s.SSH, target); err != nil {
-		return keypair{}, fmt.Errorf("не удалось установить или проверить sing-box на foreign-сервере: %w", err)
+		return keypair{}, fmt.Errorf("не удалось установить или проверить sing-box на выходном сервере: %w", err)
 	}
 	out, err := s.SSH.Run(ctx, target, "sing-box generate reality-keypair")
 	if err != nil {
-		return keypair{}, fmt.Errorf("не удалось сгенерировать REALITY keypair на foreign-сервере: %w", err)
+		return keypair{}, fmt.Errorf("не удалось сгенерировать REALITY keypair на выходном сервере: %w", err)
 	}
 	var kp keypair
 	for _, line := range strings.Split(out, "\n") {
@@ -163,7 +163,7 @@ func (s Service) applyRemoteConfig(ctx context.Context, target sshclient.Target,
 		uuid = cfg.Reality.UUID
 	}
 	if uuid == "" {
-		return fmt.Errorf("REALITY UUID не настроен: сначала выполните setup")
+		return fmt.Errorf("REALITY UUID не настроен: сначала запустите sudo vpn-router")
 	}
 	data, err := singbox.RenderForeign(server, uuid, privateKey)
 	if err != nil {
@@ -202,7 +202,7 @@ func (s Service) find(name string) (config.ForeignServer, error) {
 			return server, nil
 		}
 	}
-	return config.ForeignServer{}, fmt.Errorf("foreign-сервер %s не найден", name)
+	return config.ForeignServer{}, fmt.Errorf("выходной сервер %s не найден", name)
 }
 
 func (s Service) ruTarget() sshclient.Target {

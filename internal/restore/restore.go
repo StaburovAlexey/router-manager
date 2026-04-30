@@ -87,7 +87,7 @@ func (s Service) Run(ctx context.Context) error {
 		return fmt.Errorf("откат выполнен частично:\n%s", strings.Join(errors, "\n"))
 	}
 	fmt.Fprintln(s.Out, "Локальные сетевые изменения vpn-router отключены.")
-	fmt.Fprintln(s.Out, "Удалённые RU/foreign серверы не изменялись.")
+	fmt.Fprintln(s.Out, "Удалённые VPN-серверы не изменялись.")
 	return nil
 }
 

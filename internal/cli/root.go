@@ -102,7 +102,7 @@ func setupCmd(ctx context.Context, opts Options) *cobra.Command {
 	return &cobra.Command{
 		Hidden: true,
 		Use:    "setup",
-		Short:  "Пошаговая настройка мини-ПК, RU и foreign-серверов",
+		Short:  "Пошаговая настройка устройства и VPN-серверов",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return (setup.Service{Paths: opts.Paths, Runner: opts.Runner, In: os.Stdin, Out: cmd.OutOrStdout()}).Run(ctx)
 		},
@@ -112,7 +112,7 @@ func setupCmd(ctx context.Context, opts Options) *cobra.Command {
 func vpnCmd(ctx context.Context, opts Options) *cobra.Command {
 	return &cobra.Command{
 		Use:   "vpn",
-		Short: "Включить VPN-режим через rule_set",
+		Short: "Включить VPN",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if err := modes.EnableVPN(ctx, opts.Runner, opts.Paths); err != nil {
 				return err
@@ -172,10 +172,6 @@ func infoCmd(opts Options) *cobra.Command {
 		Use:   "info",
 		Short: "Показать итоговую информацию",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			if data, err := os.ReadFile(opts.Paths.InstallSummary); err == nil {
-				fmt.Fprint(cmd.OutOrStdout(), string(data))
-				return nil
-			}
 			text, err := summary.Generate(opts.Paths)
 			if err != nil {
 				return err
@@ -189,11 +185,11 @@ func infoCmd(opts Options) *cobra.Command {
 func qrCmd(ctx context.Context, opts Options) *cobra.Command {
 	return &cobra.Command{
 		Use:   "qr",
-		Short: "Показать QR-код VLESS/REALITY ссылки",
+		Short: "Показать QR-код для подключения",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			data, err := os.ReadFile(opts.Paths.ClientLink)
 			if err != nil {
-				return fmt.Errorf("VLESS-ссылка не найдена: сначала выполните setup")
+				return fmt.Errorf("QR-ссылка не найдена: сначала запустите sudo vpn-router")
 			}
 			out, err := opts.Runner.Output(ctx, "qrencode", "-t", "ANSIUTF8", strings.TrimSpace(string(data)))
 			if err != nil {
@@ -291,40 +287,40 @@ func directRulesCommands(ctx context.Context, opts Options) []*cobra.Command {
 
 func ruCmd(ctx context.Context, opts Options) *cobra.Command {
 	svc := ru.Service{Paths: opts.Paths, Runner: opts.Runner, SSH: sshclient.Client{Runner: opts.Runner}}
-	cmd := &cobra.Command{Use: "ru", Short: "Управление RU-сервером"}
+	cmd := &cobra.Command{Use: "ru", Short: "Управление входным VPN-сервером"}
 	cmd.AddCommand(&cobra.Command{
 		Use:   "auto",
-		Short: "Включить auto-режим RU",
+		Short: "Автоматически выбирать выходной сервер",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if err := svc.Auto(ctx); err != nil {
 				return err
 			}
-			fmt.Fprintln(cmd.OutOrStdout(), "RU auto-режим включён.")
+			fmt.Fprintln(cmd.OutOrStdout(), "Автоматический выбор выходного сервера включён.")
 			return nil
 		},
 	})
 	cmd.AddCommand(&cobra.Command{
-		Use:   "use <foreign-name>",
-		Short: "Выбрать foreign-сервер вручную",
+		Use:   "use <server-name>",
+		Short: "Выбрать выходной сервер вручную",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if err := svc.Use(ctx, args[0]); err != nil {
 				return err
 			}
-			fmt.Fprintf(cmd.OutOrStdout(), "RU переключён на %s.\n", args[0])
+			fmt.Fprintf(cmd.OutOrStdout(), "Входной сервер переключён на выходной сервер %s.\n", args[0])
 			return nil
 		},
 	})
 	cmd.AddCommand(&cobra.Command{
 		Use:   "list",
-		Short: "Показать foreign-серверы",
+		Short: "Показать выходные серверы",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return printForeignList(cmd, opts.Paths)
 		},
 	})
 	cmd.AddCommand(&cobra.Command{
-		Use:   "test <foreign-name>",
-		Short: "Проверить foreign-сервер",
+		Use:   "test <server-name>",
+		Short: "Проверить выходной сервер",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if err := svc.Test(ctx, args[0]); err != nil {
@@ -336,7 +332,7 @@ func ruCmd(ctx context.Context, opts Options) *cobra.Command {
 	})
 	cmd.AddCommand(&cobra.Command{
 		Use:   "status",
-		Short: "Показать статус RU",
+		Short: "Показать статус входного сервера",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			out, err := svc.Status(ctx)
 			if err != nil {
@@ -348,7 +344,7 @@ func ruCmd(ctx context.Context, opts Options) *cobra.Command {
 	})
 	cmd.AddCommand(&cobra.Command{
 		Use:   "logs",
-		Short: "Показать логи RU",
+		Short: "Показать логи входного сервера",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			out, err := svc.Logs(ctx)
 			if err != nil {
@@ -360,12 +356,12 @@ func ruCmd(ctx context.Context, opts Options) *cobra.Command {
 	})
 	cmd.AddCommand(&cobra.Command{
 		Use:   "rollback",
-		Short: "Откатить RU-конфиг",
+		Short: "Откатить конфиг входного сервера",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if err := svc.Rollback(ctx); err != nil {
 				return err
 			}
-			fmt.Fprintln(cmd.OutOrStdout(), "Откат RU выполнен.")
+			fmt.Fprintln(cmd.OutOrStdout(), "Откат входного сервера выполнен.")
 			return nil
 		},
 	})
@@ -374,45 +370,45 @@ func ruCmd(ctx context.Context, opts Options) *cobra.Command {
 
 func foreignCmd(ctx context.Context, opts Options) *cobra.Command {
 	svc := foreign.Service{Paths: opts.Paths, Runner: opts.Runner, SSH: sshclient.Client{Runner: opts.Runner}}
-	cmd := &cobra.Command{Use: "foreign", Short: "Управление foreign-серверами"}
+	cmd := &cobra.Command{Use: "foreign", Short: "Управление выходными VPN-серверами"}
 	cmd.AddCommand(&cobra.Command{
 		Use:   "add",
-		Short: "Добавить foreign-сервер",
+		Short: "Добавить выходной сервер",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			server := askForeignServer(cmd.OutOrStdout())
 			added, err := svc.Add(ctx, server)
 			if err != nil {
 				return err
 			}
-			fmt.Fprintf(cmd.OutOrStdout(), "Foreign-сервер добавлен: %s, SNI: %s\n", added.Name, added.Reality.SNI)
+			fmt.Fprintf(cmd.OutOrStdout(), "Выходной сервер добавлен: %s, SNI: %s\n", added.Name, added.Reality.SNI)
 			return nil
 		},
 	})
 	remove := &cobra.Command{
-		Use:   "remove <foreign-name>",
-		Short: "Удалить foreign-сервер из схемы",
+		Use:   "remove <server-name>",
+		Short: "Удалить выходной сервер из схемы",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			switchAuto, _ := cmd.Flags().GetBool("switch-auto")
 			if err := svc.Remove(ctx, args[0], switchAuto); err != nil {
 				return err
 			}
-			fmt.Fprintln(cmd.OutOrStdout(), "Foreign-сервер удалён.")
+			fmt.Fprintln(cmd.OutOrStdout(), "Выходной сервер удалён.")
 			return nil
 		},
 	}
-	remove.Flags().Bool("switch-auto", false, "переключить RU в auto перед удалением")
+	remove.Flags().Bool("switch-auto", false, "переключить входной сервер в auto перед удалением")
 	cmd.AddCommand(remove)
 	cmd.AddCommand(&cobra.Command{
 		Use:   "list",
-		Short: "Показать foreign-серверы",
+		Short: "Показать выходные серверы",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return printForeignList(cmd, opts.Paths)
 		},
 	})
 	cmd.AddCommand(&cobra.Command{
-		Use:   "test <foreign-name>",
-		Short: "Проверить SSH-доступ к foreign-серверу",
+		Use:   "test <server-name>",
+		Short: "Проверить SSH-доступ к выходному серверу",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if err := svc.Test(ctx, args[0]); err != nil {
@@ -423,12 +419,12 @@ func foreignCmd(ctx context.Context, opts Options) *cobra.Command {
 		},
 	})
 	cmd.AddCommand(&cobra.Command{
-		Use:   "cleanup <foreign-name>",
-		Short: "Очистить VPS foreign-сервера",
+		Use:   "cleanup <server-name>",
+		Short: "Очистить VPS выходного сервера",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			reader := bufio.NewReader(os.Stdin)
-			if !confirm.AskYesNo(reader, cmd.OutOrStdout(), "Очистить VPS foreign-сервера?") {
+			if !confirm.AskYesNo(reader, cmd.OutOrStdout(), "Очистить VPS выходного сервера?") {
 				fmt.Fprintln(cmd.OutOrStdout(), "Операция отменена.")
 				return nil
 			}
@@ -452,7 +448,7 @@ func wifiCmd(ctx context.Context, opts Options) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			fmt.Fprintf(cmd.OutOrStdout(), "SSID: %s\nДиапазон: %s GHz\nКанал: %d\nШирина: %d MHz\nAP interface: %s\n",
+			fmt.Fprintf(cmd.OutOrStdout(), "SSID: %s\nДиапазон: %s GHz\nКанал: %d\nШирина: %d MHz\nWi-Fi адаптер для раздачи: %s\n",
 				cfg.MiniPC.SSID, cfg.WiFi.Band, cfg.WiFi.Channel, cfg.WiFi.ChannelWidth, cfg.MiniPC.APInterface)
 			return nil
 		},
@@ -501,10 +497,9 @@ func wifiCmd(ctx context.Context, opts Options) *cobra.Command {
 			}
 			networks, _ := wifi.Scan(ctx, opts.Runner, cfg.MiniPC.APInterface)
 			rec := wifi.Recommend(caps, networks)
-			fmt.Fprintf(cmd.OutOrStdout(), "Рекомендация:\n  Диапазон: %s GHz\n  Канал: %d\n  Ширина: %d MHz\n\nПрименить настройки? [y/N] ", rec.Band, rec.Channel, rec.ChannelWidth)
+			fmt.Fprintf(cmd.OutOrStdout(), "Рекомендация:\n  Диапазон: %s GHz\n  Канал: %d\n  Ширина: %d MHz\n\n", rec.Band, rec.Channel, rec.ChannelWidth)
 			reader := bufio.NewReader(os.Stdin)
-			answer, _ := reader.ReadString('\n')
-			if strings.ToLower(strings.TrimSpace(answer)) != "y" {
+			if !confirm.AskYesNo(reader, cmd.OutOrStdout(), "Применить настройки?") {
 				fmt.Fprintln(cmd.OutOrStdout(), "Операция отменена.")
 				return nil
 			}
@@ -622,11 +617,11 @@ func updateWiFi(ctx context.Context, opts Options, cmd *cobra.Command, mutate fu
 func askForeignServer(out io.Writer) config.ForeignServer {
 	reader := bufio.NewReader(os.Stdin)
 	return config.ForeignServer{
-		Name:    prompt(reader, out, "Имя сервера", "de-1"),
-		IP:      prompt(reader, out, "IP", ""),
-		SSHUser: prompt(reader, out, "SSH user", "root"),
-		SSHPort: promptInt(reader, out, "SSH port", 22),
-		VPNPort: promptInt(reader, out, "VPN port", 443),
+		Name:    prompt(reader, out, "Имя выходного сервера", "out-1"),
+		IP:      prompt(reader, out, "IP выходного VPN-сервера", ""),
+		SSHUser: prompt(reader, out, "SSH user выходного сервера", "root"),
+		SSHPort: promptInt(reader, out, "SSH port выходного сервера", 22),
+		VPNPort: promptInt(reader, out, "VPN port выходного сервера", 443),
 	}
 }
 
@@ -651,7 +646,7 @@ func printForeignList(cmd *cobra.Command, paths config.Paths) error {
 		return err
 	}
 	if len(servers.Servers) == 0 {
-		fmt.Fprintln(cmd.OutOrStdout(), "Foreign-серверы не добавлены.")
+		fmt.Fprintln(cmd.OutOrStdout(), "Выходные серверы не добавлены.")
 		return nil
 	}
 	for _, server := range servers.Servers {

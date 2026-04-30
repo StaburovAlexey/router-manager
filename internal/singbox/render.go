@@ -21,10 +21,10 @@ type LocalTemplateData struct {
 
 func RenderLocal(cfg config.Config, paths config.Paths) ([]byte, error) {
 	if cfg.RUServer.IP == "" {
-		return nil, fmt.Errorf("RU-сервер не настроен")
+		return nil, fmt.Errorf("входной VPN-сервер не настроен")
 	}
 	if cfg.Reality.UUID == "" || cfg.Reality.SNI == "" || cfg.Reality.PublicKey == "" || cfg.Reality.ShortID == "" {
-		return nil, fmt.Errorf("REALITY параметры RU-сервера не настроены")
+		return nil, fmt.Errorf("REALITY параметры входного VPN-сервера не настроены")
 	}
 	return templates.Render("singbox-local.json.tmpl", LocalTemplateData{
 		RUServerIP:       cfg.RUServer.IP,
@@ -43,10 +43,10 @@ func RenderForeign(server config.ForeignServer, uuid string, privateKey string) 
 		return nil, fmt.Errorf("REALITY UUID не настроен")
 	}
 	if server.VPNPort == 0 {
-		return nil, fmt.Errorf("VPN port foreign-сервера не настроен")
+		return nil, fmt.Errorf("VPN port выходного сервера не настроен")
 	}
 	if server.Reality.SNI == "" || server.Reality.ShortID == "" || privateKey == "" {
-		return nil, fmt.Errorf("REALITY параметры foreign-сервера не настроены")
+		return nil, fmt.Errorf("REALITY параметры выходного сервера не настроены")
 	}
 	return templates.Render("singbox-foreign.json.tmpl", map[string]any{
 		"ListenPort": server.VPNPort,
@@ -59,10 +59,10 @@ func RenderForeign(server config.ForeignServer, uuid string, privateKey string) 
 
 func RenderRU(cfg config.Config, privateKey string, servers config.ForeignServers, selected string) ([]byte, error) {
 	if cfg.Reality.UUID == "" || cfg.Reality.SNI == "" || cfg.Reality.ShortID == "" || privateKey == "" {
-		return nil, fmt.Errorf("REALITY параметры RU-сервера не настроены")
+		return nil, fmt.Errorf("REALITY параметры входного VPN-сервера не настроены")
 	}
 	if cfg.RUServer.VPNPort == 0 {
-		return nil, fmt.Errorf("VPN port RU-сервера не настроен")
+		return nil, fmt.Errorf("VPN port входного VPN-сервера не настроен")
 	}
 
 	outbounds := make([]any, 0, len(servers.Servers)+2)
@@ -70,7 +70,7 @@ func RenderRU(cfg config.Config, privateKey string, servers config.ForeignServer
 	selectedFound := selected == ""
 	for _, server := range servers.Servers {
 		if server.Name == "" {
-			return nil, fmt.Errorf("foreign-сервер без имени")
+			return nil, fmt.Errorf("выходной сервер без имени")
 		}
 		if selected == server.Name {
 			selectedFound = true
@@ -99,7 +99,7 @@ func RenderRU(cfg config.Config, privateKey string, servers config.ForeignServer
 		})
 	}
 	if !selectedFound {
-		return nil, fmt.Errorf("foreign-сервер %s не найден", selected)
+		return nil, fmt.Errorf("выходной сервер %s не найден", selected)
 	}
 
 	final := "direct"

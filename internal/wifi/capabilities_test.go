@@ -1,6 +1,12 @@
 package wifi
 
-import "testing"
+import (
+	"context"
+	"strings"
+	"testing"
+
+	"vpn-router/internal/shell"
+)
 
 func TestParseCapabilities(t *testing.T) {
 	text := `
@@ -128,5 +134,19 @@ func TestValidateSettingsRejectsUnsupportedFiveGHz(t *testing.T) {
 	caps := Capabilities{SupportsAP: true, Supports24: true, Channels24: []int{1, 6, 11}, Widths: []int{20}}
 	if err := ValidateSettings("5", 36, 80, caps); err == nil {
 		t.Fatal("expected unsupported 5GHz error")
+	}
+}
+
+func TestInspectInterfaceRejectsP2PDevice(t *testing.T) {
+	runner := &shell.DryRunner{Outputs: map[string]string{
+		"iw dev": `
+phy#1
+	Interface p2p-dev-wlan0
+		type P2P-device
+`,
+	}}
+	_, err := InspectInterface(context.Background(), runner, "p2p-dev-wlan0")
+	if err == nil || !strings.Contains(err.Error(), "P2P-device") {
+		t.Fatalf("expected P2P-device error, got %v", err)
 	}
 }

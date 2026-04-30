@@ -70,7 +70,7 @@ func (s Service) apply(ctx context.Context, selected string) error {
 		return err
 	}
 	if cfg.RUServer.IP == "" {
-		return fmt.Errorf("RU-сервер не настроен")
+		return fmt.Errorf("входной VPN-сервер не настроен")
 	}
 	servers, err := config.LoadForeign(s.Paths)
 	if err != nil {
@@ -90,7 +90,7 @@ func (s Service) target() (sshclient.Target, error) {
 		return sshclient.Target{}, err
 	}
 	if cfg.RUServer.IP == "" {
-		return sshclient.Target{}, fmt.Errorf("RU-сервер не настроен")
+		return sshclient.Target{}, fmt.Errorf("входной VPN-сервер не настроен")
 	}
 	return sshclient.Target{User: cfg.RUServer.SSHUser, IP: cfg.RUServer.IP, Port: cfg.RUServer.SSHPort}, nil
 }
@@ -105,5 +105,5 @@ func (s Service) findForeign(name string) (config.ForeignServer, error) {
 			return server, nil
 		}
 	}
-	return config.ForeignServer{}, fmt.Errorf("foreign-сервер %s не найден", name)
+	return config.ForeignServer{}, fmt.Errorf("выходной сервер %s не найден", name)
 }

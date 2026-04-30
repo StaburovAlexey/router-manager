@@ -57,21 +57,26 @@ func Inspect(ctx context.Context, runner shell.Runner) (Capabilities, error) {
 
 func InspectInterface(ctx context.Context, runner shell.Runner, iface string) (Capabilities, error) {
 	if strings.TrimSpace(iface) == "" {
-		return Capabilities{}, fmt.Errorf("Wi-Fi interface не выбран")
+		return Capabilities{}, fmt.Errorf("Wi-Fi адаптер для раздачи не выбран")
 	}
 	infos, err := InterfaceInfos(ctx, runner)
 	if err != nil {
 		return Capabilities{}, err
 	}
 	phy := ""
+	ifaceType := ""
 	for _, info := range infos {
 		if info.Name == iface {
 			phy = info.Phy
+			ifaceType = info.Type
 			break
 		}
 	}
 	if phy == "" {
-		return Capabilities{}, fmt.Errorf("Wi-Fi interface %s не найден в iw dev", iface)
+		return Capabilities{}, fmt.Errorf("Wi-Fi адаптер %s не найден в iw dev", iface)
+	}
+	if strings.EqualFold(strings.TrimSpace(ifaceType), "P2P-device") {
+		return Capabilities{}, fmt.Errorf("Wi-Fi адаптер %s является P2P-device и не подходит для точки доступа hostapd; выберите обычный интерфейс type=managed или type=AP", iface)
 	}
 	out, err := runner.Output(ctx, "iw", "list")
 	if err != nil {
@@ -80,6 +85,9 @@ func InspectInterface(ctx context.Context, runner shell.Runner, iface string) (C
 	caps := ParseCapabilitiesForPhy(out, phy)
 	if !caps.SupportsAP {
 		return caps, fmt.Errorf("Wi-Fi адаптер %s не поддерживает AP mode", iface)
+	}
+	if !caps.Supports24 && !caps.Supports5 {
+		return caps, fmt.Errorf("Wi-Fi адаптер %s поддерживает AP mode, но `iw list` не показывает доступные AP-каналы; проверьте, что выбран не P2P-device, Wi-Fi не заблокирован rfkill и задан regulatory domain", iface)
 	}
 	return caps, nil
 }
@@ -186,6 +194,9 @@ func FormatCapabilities(caps Capabilities) string {
 	}
 	if caps.Supports5 {
 		parts = append(parts, "5 GHz каналы: "+FormatInts(caps.Channels5))
+	}
+	if !caps.Supports24 && !caps.Supports5 {
+		parts = append(parts, "диапазоны: не определены")
 	}
 	parts = append(parts, "ширины: "+FormatInts(caps.Widths)+" MHz")
 	if caps.SupportsVHT {
