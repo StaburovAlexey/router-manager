@@ -21,9 +21,10 @@ import (
 )
 
 const (
-	BinaryPath = "/usr/local/bin/sing-box"
-	UnitPath   = "/etc/systemd/system/sing-box.service"
-	Service    = "sing-box"
+	BinaryPath      = "/usr/local/bin/sing-box"
+	UnitPath        = "/etc/systemd/system/sing-box.service"
+	Service         = "sing-box"
+	FallbackVersion = "1.12.0"
 )
 
 type Installer struct {
@@ -34,14 +35,7 @@ func (i Installer) EnsureInstalled(ctx context.Context, runner shell.Runner) err
 	if _, err := runner.Output(ctx, BinaryPath, "version"); err == nil {
 		return ensureUnit()
 	}
-	version := os.Getenv("VPN_ROUTER_SING_BOX_VERSION")
-	if version == "" {
-		var err error
-		version, err = i.latestVersion(ctx)
-		if err != nil {
-			return err
-		}
-	}
+	version := i.version(ctx)
 	arch, err := system.GoArchToLinuxAssetArch()
 	if err != nil {
 		return err
@@ -91,14 +85,7 @@ systemctl restart sing-box`, encoded)
 }
 
 func (i Installer) EnsureRemoteInstalled(ctx context.Context, ssh sshclient.Client, target sshclient.Target) error {
-	version := os.Getenv("VPN_ROUTER_SING_BOX_VERSION")
-	if version == "" {
-		var err error
-		version, err = i.latestVersion(ctx)
-		if err != nil {
-			return err
-		}
-	}
+	version := i.version(ctx)
 	unit := `[Unit]
 Description=sing-box service for VPN Router Manager
 After=network-online.target
@@ -273,6 +260,18 @@ func (i Installer) latestVersion(ctx context.Context) (string, error) {
 		return "", fmt.Errorf("GitHub latest release sing-box не содержит tag_name")
 	}
 	return version, nil
+}
+
+func (i Installer) version(ctx context.Context) string {
+	if version := strings.TrimSpace(os.Getenv("VPN_ROUTER_SING_BOX_VERSION")); version != "" {
+		return strings.TrimPrefix(version, "v")
+	}
+	version, err := i.latestVersion(ctx)
+	if err == nil {
+		return version
+	}
+	fmt.Fprintf(os.Stderr, "Не удалось получить latest release sing-box, использую fallback %s: %v\n", FallbackVersion, err)
+	return FallbackVersion
 }
 
 func (i Installer) downloadAndInstall(ctx context.Context, version string, arch string) error {
