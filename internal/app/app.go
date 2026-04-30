@@ -1,9 +1,9 @@
 package app
 
 import (
-	"vpn-router/internal/cli"
-	"vpn-router/internal/config"
-	"vpn-router/internal/shell"
+	"router-manager/internal/cli"
+	"router-manager/internal/config"
+	"router-manager/internal/shell"
 )
 
 func Execute(version string) error {

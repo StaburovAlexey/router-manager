@@ -4,7 +4,7 @@ import (
 	"context"
 	"testing"
 
-	"vpn-router/internal/shell"
+	"router-manager/internal/shell"
 )
 
 func TestUnmaskEnable(t *testing.T) {

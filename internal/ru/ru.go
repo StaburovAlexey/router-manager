@@ -4,10 +4,10 @@ import (
 	"context"
 	"fmt"
 
-	"vpn-router/internal/config"
-	"vpn-router/internal/shell"
-	"vpn-router/internal/singbox"
-	"vpn-router/internal/sshclient"
+	"router-manager/internal/config"
+	"router-manager/internal/shell"
+	"router-manager/internal/singbox"
+	"router-manager/internal/sshclient"
 )
 
 type Service struct {
@@ -40,7 +40,7 @@ func (s Service) Status(ctx context.Context) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	return s.SSH.Run(ctx, target, "cat /etc/ru-vpn/state.json 2>/dev/null || echo '{\"mode\":\"unknown\",\"selected_foreign\":\"\"}'")
+	return s.SSH.Run(ctx, target, "cat /etc/ru-tunnel/state.json 2>/dev/null || echo '{\"mode\":\"unknown\",\"selected_foreign\":\"\"}'")
 }
 
 func (s Service) Logs(ctx context.Context) (string, error) {
@@ -70,7 +70,7 @@ func (s Service) apply(ctx context.Context, selected string) error {
 		return err
 	}
 	if cfg.RUServer.IP == "" {
-		return fmt.Errorf("входной VPN-сервер не настроен")
+		return fmt.Errorf("входной сервер не настроен")
 	}
 	servers, err := config.LoadForeign(s.Paths)
 	if err != nil {
@@ -90,7 +90,7 @@ func (s Service) target() (sshclient.Target, error) {
 		return sshclient.Target{}, err
 	}
 	if cfg.RUServer.IP == "" {
-		return sshclient.Target{}, fmt.Errorf("входной VPN-сервер не настроен")
+		return sshclient.Target{}, fmt.Errorf("входной сервер не настроен")
 	}
 	return sshclient.Target{User: cfg.RUServer.SSHUser, IP: cfg.RUServer.IP, Port: cfg.RUServer.SSHPort}, nil
 }

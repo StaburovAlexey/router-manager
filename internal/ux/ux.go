@@ -29,7 +29,7 @@ func actionsFor(text string) []string {
 	lower := strings.ToLower(text)
 	switch {
 	case strings.Contains(lower, "root") || strings.Contains(lower, "sudo"):
-		return []string{"запустите приложение с правами администратора: sudo vpn-router"}
+		return []string{"запустите приложение с правами администратора: sudo router-manager"}
 	case strings.Contains(lower, "qr-ссылка") || strings.Contains(lower, "client-link"):
 		return []string{"завершите первичную настройку", "после настройки откройте: Подключить устройство -> Показать QR-код клиента"}
 	case strings.Contains(lower, "wi-fi адаптер") || strings.Contains(lower, "ap mode") || strings.Contains(lower, "p2p-device"):
@@ -39,13 +39,13 @@ func actionsFor(text string) []string {
 	case strings.Contains(lower, "hostapd"):
 		return []string{"откройте Проблемы и диагностика -> Показать логи", "попробуйте Wi-Fi -> Перезапустить Wi-Fi"}
 	case strings.Contains(lower, "dnsmasq") || strings.Contains(lower, "dns"):
-		return []string{"откройте Проблемы и диагностика -> Показать логи", "попробуйте Интернет -> Выключить VPN, затем Интернет -> Включить VPN"}
-	case strings.Contains(lower, "sing-box") || strings.Contains(lower, "vpn"):
-		return []string{"откройте Проблемы и диагностика -> Показать логи", "проверьте доступность входного и выходного VPN-серверов"}
+		return []string{"откройте Проблемы и диагностика -> Показать логи", "попробуйте Интернет -> Отключить маршрут через сервер, затем Интернет -> Включить маршрут через сервер"}
+	case strings.Contains(lower, "sing-box") || strings.Contains(lower, "tunnel"):
+		return []string{"откройте Проблемы и диагностика -> Показать логи", "проверьте доступность входного и выходного серверов"}
 	case strings.Contains(lower, "ssh"):
 		return []string{"проверьте IP, порт и пользователя VPS", "если парольный SSH отключён, добавьте ключ мини-ПК на сервер через панель провайдера"}
 	case strings.Contains(lower, "не найден") || strings.Contains(lower, "not found"):
-		return []string{"откройте Проблемы и диагностика -> Собрать отчёт без секретов", "если это первая установка, запустите: sudo vpn-router"}
+		return []string{"откройте Проблемы и диагностика -> Собрать отчёт без секретов", "если это первая установка, запустите: sudo router-manager"}
 	default:
 		return []string{"откройте Проблемы и диагностика -> Краткая диагностика", "если непонятно, соберите отчёт без секретов и проверьте пункты с ошибками"}
 	}

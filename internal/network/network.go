@@ -10,8 +10,8 @@ import (
 	"strings"
 	"time"
 
-	"vpn-router/internal/config"
-	"vpn-router/internal/shell"
+	"router-manager/internal/config"
+	"router-manager/internal/shell"
 )
 
 var PrivateCIDRs = []string{
@@ -139,7 +139,7 @@ func ConfigureLANInterface(ctx context.Context, runner shell.Runner, cfg config.
 
 func EnableIPv4Forwarding(ctx context.Context, runner shell.Runner, sysctlPath string) error {
 	if sysctlPath == "" {
-		sysctlPath = "/etc/sysctl.d/99-vpn-router.conf"
+		sysctlPath = "/etc/sysctl.d/99-router-manager.conf"
 	}
 	if err := os.MkdirAll(filepath.Dir(sysctlPath), 0o755); err != nil {
 		return fmt.Errorf("не удалось создать каталог для %s: %w", sysctlPath, err)

@@ -12,7 +12,7 @@ func TestBinaryAssetName(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got != "vpn-router-linux-amd64" {
+	if got != "router-manager-linux-amd64" {
 		t.Fatalf("asset = %q", got)
 	}
 	if _, err := binaryAssetName("darwin", "amd64"); err == nil {
@@ -21,15 +21,15 @@ func TestBinaryAssetName(t *testing.T) {
 }
 
 func TestChecksumForAcceptsDistPath(t *testing.T) {
-	text := "abc123  dist/vpn-router-linux-amd64\n"
-	got, ok := checksumFor(text, "vpn-router-linux-amd64")
+	text := "abc123  dist/router-manager-linux-amd64\n"
+	got, ok := checksumFor(text, "router-manager-linux-amd64")
 	if !ok || got != "abc123" {
 		t.Fatalf("checksum = %q, ok = %v", got, ok)
 	}
 }
 
 func TestVerifySHA256(t *testing.T) {
-	data := []byte("vpn-router")
+	data := []byte("router-manager")
 	sum := sha256.Sum256(data)
 	if err := verifySHA256(data, hex.EncodeToString(sum[:])); err != nil {
 		t.Fatal(err)

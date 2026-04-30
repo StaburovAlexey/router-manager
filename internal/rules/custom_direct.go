@@ -12,9 +12,9 @@ import (
 	"regexp"
 	"strings"
 
-	"vpn-router/internal/config"
-	"vpn-router/internal/shell"
-	"vpn-router/internal/singbox"
+	"router-manager/internal/config"
+	"router-manager/internal/shell"
+	"router-manager/internal/singbox"
 )
 
 type RuleSet struct {
@@ -182,7 +182,7 @@ func AfterChange(ctx context.Context, runner shell.Runner, paths config.Paths) e
 	if err != nil {
 		return err
 	}
-	if cfg.CurrentMode == "vpn" {
+	if cfg.CurrentMode == "tunnel" {
 		return singbox.Restart(ctx, runner)
 	}
 	return nil
@@ -191,7 +191,7 @@ func AfterChange(ctx context.Context, runner shell.Runner, paths config.Paths) e
 func FormatHuman(set RuleSet) string {
 	set = normalize(set)
 	var b strings.Builder
-	fmt.Fprintln(&b, "Сайты и адреса без VPN:")
+	fmt.Fprintln(&b, "Сайты и адреса прямого доступа:")
 	hasRules := false
 	for _, value := range set.Rules[0].DomainSuffix {
 		hasRules = true

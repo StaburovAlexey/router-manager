@@ -7,8 +7,8 @@ import (
 	"strings"
 	"testing"
 
-	"vpn-router/internal/config"
-	"vpn-router/internal/shell"
+	"router-manager/internal/config"
+	"router-manager/internal/shell"
 )
 
 func TestRunRemovesDataBinaryAndDependencies(t *testing.T) {
@@ -17,7 +17,7 @@ func TestRunRemovesDataBinaryAndDependencies(t *testing.T) {
 	if err := os.MkdirAll(paths.BaseDir, 0o700); err != nil {
 		t.Fatal(err)
 	}
-	binary := filepath.Join(dir, "vpn-router")
+	binary := filepath.Join(dir, "router-manager")
 	if err := os.WriteFile(binary, []byte("bin"), 0o755); err != nil {
 		t.Fatal(err)
 	}

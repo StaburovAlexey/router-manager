@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"vpn-router/internal/config"
+	"router-manager/internal/config"
 )
 
 func TestRenderLocalUsesRUReality(t *testing.T) {
@@ -134,7 +134,7 @@ func TestExtractRealityPrivateKey(t *testing.T) {
 func baseConfig() config.Config {
 	cfg := config.DefaultConfig()
 	cfg.RUServer.IP = "203.0.113.10"
-	cfg.RUServer.VPNPort = 443
+	cfg.RUServer.TunnelPort = 443
 	cfg.Reality.UUID = "11111111-1111-4111-8111-111111111111"
 	cfg.Reality.SNI = "ru.example.com"
 	cfg.Reality.PublicKey = "ru-public"
@@ -144,9 +144,9 @@ func baseConfig() config.Config {
 
 func foreignServer(name string) config.ForeignServer {
 	return config.ForeignServer{
-		Name:    name,
-		IP:      "198.51.100.20",
-		VPNPort: 443,
+		Name:       name,
+		IP:         "198.51.100.20",
+		TunnelPort: 443,
 		Reality: config.RealityConfig{
 			SNI:       name + ".example.com",
 			PublicKey: name + "-public",

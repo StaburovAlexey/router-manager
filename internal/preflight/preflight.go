@@ -6,11 +6,11 @@ import (
 	"os"
 	"strings"
 
-	"vpn-router/internal/config"
-	"vpn-router/internal/shell"
-	"vpn-router/internal/singbox"
-	"vpn-router/internal/sshclient"
-	"vpn-router/internal/system"
+	"router-manager/internal/config"
+	"router-manager/internal/shell"
+	"router-manager/internal/singbox"
+	"router-manager/internal/sshclient"
+	"router-manager/internal/system"
 )
 
 type Finding struct {
@@ -22,9 +22,9 @@ func Collect(ctx context.Context, runner shell.Runner, paths config.Paths) []Fin
 	var findings []Finding
 	findings = appendFileFinding(findings, paths.SingBoxLocalConf, "Локальный sing-box config")
 	findings = appendFileFinding(findings, paths.HostapdConf, "hostapd config")
-	findings = appendFileFinding(findings, paths.DnsmasqConf, "dnsmasq config vpn-router")
-	findings = appendFileFinding(findings, paths.NftablesConf, "nftables config vpn-router")
-	findings = appendFileFinding(findings, paths.SysctlConf, "sysctl config vpn-router")
+	findings = appendFileFinding(findings, paths.DnsmasqConf, "dnsmasq config router-manager")
+	findings = appendFileFinding(findings, paths.NftablesConf, "nftables config router-manager")
+	findings = appendFileFinding(findings, paths.SysctlConf, "sysctl config router-manager")
 
 	if out, err := runner.Output(ctx, "ip", "link", "show", "tun0"); err == nil && strings.TrimSpace(out) != "" {
 		findings = append(findings, Finding{
@@ -32,17 +32,17 @@ func Collect(ctx context.Context, runner shell.Runner, paths config.Paths) []Fin
 			Detail: "Локальный sing-box использует interface_name=tun0; существующий интерфейс может конфликтовать.",
 		})
 	}
-	if out, err := runner.Output(ctx, "nft", "list", "table", "inet", "vpn_router"); err == nil && strings.TrimSpace(out) != "" {
+	if out, err := runner.Output(ctx, "nft", "list", "table", "inet", "router_manager"); err == nil && strings.TrimSpace(out) != "" {
 		findings = append(findings, Finding{
-			Title:  "nftables table inet vpn_router уже существует",
-			Detail: "При применении режима таблица будет уничтожена и создана заново из шаблона vpn-router.",
+			Title:  "nftables table inet router_manager уже существует",
+			Detail: "При применении режима таблица будет уничтожена и создана заново из шаблона router-manager.",
 		})
 	}
 	for _, service := range []string{singbox.Service, "hostapd", "dnsmasq", "nftables"} {
 		if status := system.ServiceStatus(ctx, runner, service); status == "active" {
 			findings = append(findings, Finding{
 				Title:  fmt.Sprintf("Служба %s уже active", service),
-				Detail: "vpn-router будет управлять этой службой и может перезапустить её со своими конфигами.",
+				Detail: "router-manager будет управлять этой службой и может перезапустить её со своими конфигами.",
 			})
 		}
 	}
@@ -54,13 +54,13 @@ func CollectRemote(ctx context.Context, ssh sshclient.Client, target sshclient.T
 	if out, err := ssh.Run(ctx, target, "test -f /etc/sing-box/config.json && echo exists || true"); err == nil && strings.TrimSpace(out) == "exists" {
 		findings = append(findings, Finding{
 			Title:  fmt.Sprintf("%s: /etc/sing-box/config.json уже существует", label),
-			Detail: "vpn-router сделает backup в /etc/sing-box/backups и заменит активный sing-box config.",
+			Detail: "router-manager сделает backup в /etc/sing-box/backups и заменит активный sing-box config.",
 		})
 	}
 	if out, err := ssh.Run(ctx, target, "systemctl is-active sing-box 2>/dev/null || true"); err == nil && strings.TrimSpace(out) == "active" {
 		findings = append(findings, Finding{
 			Title:  fmt.Sprintf("%s: sing-box.service уже active", label),
-			Detail: "vpn-router будет управлять этой службой и перезапустит её со своим config.",
+			Detail: "router-manager будет управлять этой службой и перезапустит её со своим config.",
 		})
 	}
 	return findings
@@ -76,7 +76,7 @@ func Format(findings []Finding) string {
 		fmt.Fprintf(&b, "- %s\n  %s\n", finding.Title, finding.Detail)
 	}
 	fmt.Fprintln(&b)
-	fmt.Fprintln(&b, "Если продолжить, vpn-router сделает backup управляемых файлов и перезапишет активные настройки своими конфигами.")
+	fmt.Fprintln(&b, "Если продолжить, router-manager сделает backup управляемых файлов и перезапишет активные настройки своими конфигами.")
 	fmt.Fprintln(&b, "Для продолжения введите да. Для отмены введите нет.")
 	return b.String()
 }
@@ -107,7 +107,7 @@ func appendFileFinding(findings []Finding, path string, title string) []Finding 
 	}
 	findings = append(findings, Finding{
 		Title:  title,
-		Detail: fmt.Sprintf("%s уже существует и будет заменён конфигом vpn-router.", path),
+		Detail: fmt.Sprintf("%s уже существует и будет заменён конфигом router-manager.", path),
 	})
 	return findings
 }

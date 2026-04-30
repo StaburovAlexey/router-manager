@@ -1,6 +1,6 @@
-destroy table inet vpn_router
+destroy table inet router_manager
 
-table inet vpn_router {
+table inet router_manager {
   chain forward {
     type filter hook forward priority 0; policy drop;
     ct state established,related accept

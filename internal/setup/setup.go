@@ -12,20 +12,20 @@ import (
 
 	"github.com/charmbracelet/x/term"
 
-	"vpn-router/internal/bootstrap"
-	"vpn-router/internal/config"
-	"vpn-router/internal/confirm"
-	"vpn-router/internal/foreign"
-	"vpn-router/internal/network"
-	"vpn-router/internal/nftables"
-	"vpn-router/internal/preflight"
-	"vpn-router/internal/reality"
-	"vpn-router/internal/shell"
-	"vpn-router/internal/singbox"
-	"vpn-router/internal/sshclient"
-	"vpn-router/internal/summary"
-	"vpn-router/internal/system"
-	"vpn-router/internal/wifi"
+	"router-manager/internal/bootstrap"
+	"router-manager/internal/config"
+	"router-manager/internal/confirm"
+	"router-manager/internal/foreign"
+	"router-manager/internal/network"
+	"router-manager/internal/nftables"
+	"router-manager/internal/preflight"
+	"router-manager/internal/reality"
+	"router-manager/internal/shell"
+	"router-manager/internal/singbox"
+	"router-manager/internal/sshclient"
+	"router-manager/internal/summary"
+	"router-manager/internal/system"
+	"router-manager/internal/wifi"
 )
 
 type Service struct {
@@ -70,7 +70,7 @@ func (s Service) Run(ctx context.Context) error {
 		}
 	}
 
-	printStep(s.Out, 2, 5, "SSH-доступ к VPN-серверам")
+	printStep(s.Out, 2, 5, "SSH-доступ к серверам")
 	fmt.Fprintln(s.Out, "Приложение может настроить SSH-доступ автоматически.")
 	fmt.Fprintln(s.Out, "Для этого пароль от VPS вводится один раз, не сохраняется и используется только для добавления SSH-ключа.")
 
@@ -99,25 +99,25 @@ func (s Service) Run(ctx context.Context) error {
 		return err
 	}
 
-	printStep(s.Out, 4, 5, "Входной VPN-сервер")
-	cfg.RUServer.IP = ask(reader, s.Out, "IP входного VPN-сервера", cfg.RUServer.IP)
+	printStep(s.Out, 4, 5, "Входной сервер")
+	cfg.RUServer.IP = ask(reader, s.Out, "IP входного сервера", cfg.RUServer.IP)
 	cfg.RUServer.SSHUser = ask(reader, s.Out, "SSH user входного сервера", defaultString(cfg.RUServer.SSHUser, "root"))
 	cfg.RUServer.SSHPort = askInt(reader, s.Out, "SSH port входного сервера", defaultInt(cfg.RUServer.SSHPort, 22))
-	cfg.RUServer.VPNPort = askInt(reader, s.Out, "VPN port входного сервера", defaultInt(cfg.RUServer.VPNPort, 443))
+	cfg.RUServer.TunnelPort = askInt(reader, s.Out, "порт подключения входного сервера", defaultInt(cfg.RUServer.TunnelPort, 443))
 
 	ssh := sshclient.Client{Runner: s.Runner}
 	ruTarget := sshclient.Target{User: cfg.RUServer.SSHUser, IP: cfg.RUServer.IP, Port: cfg.RUServer.SSHPort}
-	if err := ensureSSHAccess(ctx, ssh, ruTarget, "входной VPN-сервер", reader, s.Out); err != nil {
+	if err := ensureSSHAccess(ctx, ssh, ruTarget, "входной сервер", reader, s.Out); err != nil {
 		return err
 	}
-	if findings := preflight.CollectRemote(ctx, ssh, ruTarget, "входной VPN-сервер"); len(findings) > 0 {
+	if findings := preflight.CollectRemote(ctx, ssh, ruTarget, "входной сервер"); len(findings) > 0 {
 		fmt.Fprintln(s.Out, preflight.Format(findings))
 		if !confirm.AskYesNo(reader, s.Out, "Подтвердите перезапись входного сервера") {
 			return fmt.Errorf("настройка остановлена: перезапись входного сервера не подтверждена")
 		}
 	}
 	if err := (singbox.Installer{}).EnsureRemoteInstalled(ctx, ssh, ruTarget); err != nil {
-		return fmt.Errorf("не удалось установить или проверить sing-box на входном VPN-сервере: %w", err)
+		return fmt.Errorf("не удалось установить или проверить sing-box на входном сервере: %w", err)
 	}
 
 	if err := ensureRealityRuntime(ctx, &cfg); err != nil {
@@ -133,12 +133,12 @@ func (s Service) Run(ctx context.Context) error {
 		return err
 	}
 
-	printStep(s.Out, 5, 5, "Выходные VPN-серверы и запуск")
+	printStep(s.Out, 5, 5, "Выходные серверы и запуск")
 	var addedForeign []config.ForeignServer
 	for index := 0; ; index++ {
 		if index == 0 {
-			fmt.Fprintln(s.Out, "Добавление выходного VPN-сервера.")
-		} else if !confirm.AskYesNo(reader, s.Out, "Добавить ещё один выходной VPN-сервер?") {
+			fmt.Fprintln(s.Out, "Добавление выходного сервера.")
+		} else if !confirm.AskYesNo(reader, s.Out, "Добавить ещё один выходной сервер?") {
 			break
 		}
 		added, err := configureForeign(ctx, s.Paths, s.Runner, ssh, reader, s.Out, cfg, ruPrivate, index)
@@ -153,7 +153,7 @@ func (s Service) Run(ctx context.Context) error {
 			return err
 		}
 		if len(servers.Servers) == 0 {
-			return fmt.Errorf("нужен хотя бы один выходной VPN-сервер")
+			return fmt.Errorf("нужен хотя бы один выходной сервер")
 		}
 		if err := (foreign.Service{
 			Paths:      s.Paths,
@@ -181,7 +181,7 @@ func (s Service) Run(ctx context.Context) error {
 		return err
 	}
 
-	link := reality.ClientLink(cfg.Reality.UUID, cfg.RUServer.IP, cfg.RUServer.VPNPort, cfg.Reality.PublicKey, cfg.Reality.ShortID, cfg.Reality.SNI, "vpn-router-ru")
+	link := reality.ClientLink(cfg.Reality.UUID, cfg.RUServer.IP, cfg.RUServer.TunnelPort, cfg.Reality.PublicKey, cfg.Reality.ShortID, cfg.Reality.SNI, "router-manager-ru")
 	if err := config.WriteSensitiveText(s.Paths.ClientLink, link+"\n"); err != nil {
 		return err
 	}
@@ -191,7 +191,7 @@ func (s Service) Run(ctx context.Context) error {
 	}
 	fmt.Fprintln(s.Out)
 	for _, added := range addedForeign {
-		fmt.Fprintf(s.Out, "Выходной VPN-сервер готов: %s, SNI: %s\n", added.Name, added.Reality.SNI)
+		fmt.Fprintf(s.Out, "Выходной сервер готов: %s, SNI: %s\n", added.Name, added.Reality.SNI)
 	}
 	fmt.Fprintln(s.Out, text)
 	return nil
@@ -206,7 +206,7 @@ func printSetupIntro(out io.Writer, cfg config.Config) {
 	if cfg.MiniPC.APInterface != "" || cfg.RUServer.IP != "" || cfg.Reality.UUID != "" {
 		fmt.Fprintln(out, "Продолжаю настройку. Уже сохранённые значения будут предложены по умолчанию.")
 	} else {
-		fmt.Fprintln(out, "Мастер настройки подготовит мини-ПК как Wi-Fi VPN-роутер.")
+		fmt.Fprintln(out, "Мастер настройки подготовит мини-ПК как Wi-Fi роутер.")
 	}
 	fmt.Fprintln(out)
 	fmt.Fprintln(out, "Перед началом проверьте:")
@@ -223,7 +223,7 @@ func printReadiness(ctx context.Context, runner shell.Runner, out io.Writer) err
 	if len(missing) == 0 {
 		fmt.Fprintln(out, "- системные команды: OK")
 	} else {
-		return fmt.Errorf("не найдены системные команды: %s. Запустите sudo vpn-router, чтобы выполнить подготовку системы", strings.Join(missing, ", "))
+		return fmt.Errorf("не найдены системные команды: %s. Запустите sudo router-manager, чтобы выполнить подготовку системы", strings.Join(missing, ", "))
 	}
 	if err := network.HasInternet(ctx, runner); err != nil {
 		fmt.Fprintln(out, "- интернет на мини-ПК: ошибка")
@@ -279,11 +279,11 @@ func configureForeign(ctx context.Context, paths config.Paths, runner shell.Runn
 		defaultName = fmt.Sprintf("out-%d", index+1)
 	}
 	foreignServer := config.ForeignServer{
-		Name:    ask(reader, out, "Имя выходного сервера", defaultName),
-		IP:      ask(reader, out, "IP выходного VPN-сервера", ""),
-		SSHUser: ask(reader, out, "SSH user выходного сервера", "root"),
-		SSHPort: askInt(reader, out, "SSH port выходного сервера", 22),
-		VPNPort: askInt(reader, out, "VPN port выходного сервера", 443),
+		Name:       ask(reader, out, "Имя выходного сервера", defaultName),
+		IP:         ask(reader, out, "IP выходного сервера", ""),
+		SSHUser:    ask(reader, out, "SSH user выходного сервера", "root"),
+		SSHPort:    askInt(reader, out, "SSH port выходного сервера", 22),
+		TunnelPort: askInt(reader, out, "порт подключения выходного сервера", 443),
 	}
 	foreignAction, existingForeign, err := resolveForeignConflict(paths, &foreignServer, reader, out)
 	if err != nil {
@@ -295,10 +295,10 @@ func configureForeign(ctx context.Context, paths config.Paths, runner shell.Runn
 		foreignServer = existingForeign
 	}
 	foreignTarget := sshclient.Target{User: foreignServer.SSHUser, IP: foreignServer.IP, Port: foreignServer.SSHPort}
-	if err := ensureSSHAccess(ctx, ssh, foreignTarget, "выходной VPN-сервер", reader, out); err != nil {
+	if err := ensureSSHAccess(ctx, ssh, foreignTarget, "выходной сервер", reader, out); err != nil {
 		return foreignServer, err
 	}
-	if findings := preflight.CollectRemote(ctx, ssh, foreignTarget, "выходной VPN-сервер"); len(findings) > 0 && foreignAction != "use" {
+	if findings := preflight.CollectRemote(ctx, ssh, foreignTarget, "выходной сервер"); len(findings) > 0 && foreignAction != "use" {
 		fmt.Fprintln(out, preflight.Format(findings))
 		if !confirm.AskYesNo(reader, out, "Подтвердите перезапись выходного сервера") {
 			return foreignServer, fmt.Errorf("настройка остановлена: перезапись выходного сервера не подтверждена")
@@ -337,7 +337,7 @@ func configureForeign(ctx context.Context, paths config.Paths, runner shell.Runn
 func generateRemoteRealityKeypair(ctx context.Context, ssh sshclient.Client, target sshclient.Target) (string, string, error) {
 	out, err := ssh.Run(ctx, target, "sing-box generate reality-keypair")
 	if err != nil {
-		return "", "", fmt.Errorf("не удалось сгенерировать REALITY keypair на входном VPN-сервере: %w", err)
+		return "", "", fmt.Errorf("не удалось сгенерировать REALITY keypair на входном сервере: %w", err)
 	}
 	return parseKeypair(out)
 }
@@ -421,7 +421,7 @@ func printManualSSHInstructions(out io.Writer, target sshclient.Target) {
 	fmt.Fprintln(out)
 	fmt.Fprintln(out, "Ручной способ, если парольный SSH на VPS отключён:")
 	fmt.Fprintln(out, "  sudo mkdir -p /root/.ssh")
-	fmt.Fprintln(out, `  sudo ssh-keygen -t ed25519 -C "vpn-router" -f /root/.ssh/id_ed25519`)
+	fmt.Fprintln(out, `  sudo ssh-keygen -t ed25519 -C "router-manager" -f /root/.ssh/id_ed25519`)
 	fmt.Fprintf(out, "  sudo ssh-keyscan -H -p %d %s | sudo tee -a /root/.ssh/known_hosts >/dev/null\n", target.Port, target.IP)
 	fmt.Fprintf(out, "  sudo ssh-copy-id -i /root/.ssh/id_ed25519.pub -p %d %s\n", target.Port, target.Addr())
 	fmt.Fprintln(out)
@@ -433,9 +433,9 @@ func resolveForeignConflict(paths config.Paths, server *config.ForeignServer, re
 		if err != nil || !found {
 			return "add", config.ForeignServer{}, err
 		}
-		fmt.Fprintf(out, "\nВыходной VPN-сервер с именем %q уже есть в конфиге.\n", server.Name)
-		fmt.Fprintf(out, "  сохранённый: %s:%d, SSH %s:%d, SNI %s\n", existing.IP, existing.VPNPort, existing.SSHUser, existing.SSHPort, showValue(existing.Reality.SNI))
-		fmt.Fprintf(out, "  введённый:   %s:%d, SSH %s:%d\n", server.IP, server.VPNPort, server.SSHUser, server.SSHPort)
+		fmt.Fprintf(out, "\nВыходной сервер с именем %q уже есть в конфиге.\n", server.Name)
+		fmt.Fprintf(out, "  сохранённый: %s:%d, SSH %s:%d, SNI %s\n", existing.IP, existing.TunnelPort, existing.SSHUser, existing.SSHPort, showValue(existing.Reality.SNI))
+		fmt.Fprintf(out, "  введённый:   %s:%d, SSH %s:%d\n", server.IP, server.TunnelPort, server.SSHUser, server.SSHPort)
 		fmt.Fprintln(out, "Выберите действие:")
 		fmt.Fprintln(out, "  1) использовать сохранённый выходной сервер и продолжить")
 		fmt.Fprintln(out, "  2) заменить сохранённый сервер введёнными данными")

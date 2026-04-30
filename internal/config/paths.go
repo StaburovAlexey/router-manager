@@ -6,7 +6,7 @@ import (
 )
 
 const (
-	DefaultBaseDir = "/etc/vpn-router"
+	DefaultBaseDir = "/etc/router-manager"
 )
 
 type Paths struct {
@@ -16,11 +16,11 @@ type Paths struct {
 	InstallSummary   string
 	ClientLink       string
 	RulesDir         string
-	VPNInfraRules    string
+	InfraRules       string
 	CustomDirect     string
 	CustomProxy      string
 	ModesDir         string
-	VPNMode          string
+	TunnelMode       string
 	DirectMode       string
 	BackupsDir       string
 	HostapdConf      string
@@ -32,7 +32,7 @@ type Paths struct {
 }
 
 func DefaultPaths() Paths {
-	base := os.Getenv("VPN_ROUTER_ETC")
+	base := os.Getenv("ROUTER_MANAGER_ETC")
 	if base == "" {
 		base = DefaultBaseDir
 	}
@@ -49,18 +49,18 @@ func NewPaths(base string) Paths {
 		InstallSummary:   filepath.Join(base, "install-summary.txt"),
 		ClientLink:       filepath.Join(base, "client-link.txt"),
 		RulesDir:         rules,
-		VPNInfraRules:    filepath.Join(rules, "vpn-infra.json"),
+		InfraRules:       filepath.Join(rules, "tunnel-infra.json"),
 		CustomDirect:     filepath.Join(rules, "custom-direct.json"),
 		CustomProxy:      filepath.Join(rules, "custom-proxy.json"),
 		ModesDir:         modes,
-		VPNMode:          filepath.Join(modes, "vpn.json"),
+		TunnelMode:       filepath.Join(modes, "tunnel.json"),
 		DirectMode:       filepath.Join(modes, "direct.json"),
 		BackupsDir:       filepath.Join(base, "backups"),
 		HostapdConf:      "/etc/hostapd/hostapd.conf",
-		DnsmasqConf:      "/etc/dnsmasq.d/vpn-router.conf",
-		SysctlConf:       "/etc/sysctl.d/99-vpn-router.conf",
+		DnsmasqConf:      "/etc/dnsmasq.d/router-manager.conf",
+		SysctlConf:       "/etc/sysctl.d/99-router-manager.conf",
 		NftablesMainConf: "/etc/nftables.conf",
-		NftablesConf:     "/etc/nftables.d/vpn-router.nft",
+		NftablesConf:     "/etc/nftables.d/router-manager.nft",
 		SingBoxLocalConf: "/etc/sing-box/config.json",
 	}
 }

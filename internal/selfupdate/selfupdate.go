@@ -15,14 +15,14 @@ import (
 	"strings"
 	"time"
 
-	"vpn-router/internal/config"
-	"vpn-router/internal/system"
+	"router-manager/internal/config"
+	"router-manager/internal/system"
 )
 
 const (
-	DefaultRepo       = "StaburovAlexey/route-manager"
+	DefaultRepo       = "StaburovAlexey/router-manager"
 	DefaultAPIBaseURL = "https://api.github.com"
-	DefaultTargetPath = "/usr/local/sbin/vpn-router"
+	DefaultTargetPath = "/usr/local/sbin/router-manager"
 )
 
 type Service struct {
@@ -131,7 +131,7 @@ func (s Service) Run(ctx context.Context) error {
 	}
 
 	fmt.Fprintf(out, "Обновление установлено: %s\n", target)
-	fmt.Fprintln(out, "Закройте меню и снова запустите: sudo vpn-router")
+	fmt.Fprintln(out, "Закройте меню и снова запустите: sudo router-manager")
 	return nil
 }
 
@@ -139,7 +139,7 @@ func (s Service) repo() string {
 	if s.Repo != "" {
 		return s.Repo
 	}
-	if value := strings.TrimSpace(os.Getenv("VPN_ROUTER_UPDATE_REPO")); value != "" {
+	if value := strings.TrimSpace(os.Getenv("ROUTER_MANAGER_UPDATE_REPO")); value != "" {
 		return value
 	}
 	return DefaultRepo
@@ -149,7 +149,7 @@ func (s Service) apiBaseURL() string {
 	if s.APIBaseURL != "" {
 		return strings.TrimRight(s.APIBaseURL, "/")
 	}
-	if value := strings.TrimSpace(os.Getenv("VPN_ROUTER_UPDATE_API_URL")); value != "" {
+	if value := strings.TrimSpace(os.Getenv("ROUTER_MANAGER_UPDATE_API_URL")); value != "" {
 		return strings.TrimRight(value, "/")
 	}
 	return DefaultAPIBaseURL
@@ -159,10 +159,10 @@ func (s Service) targetPath() string {
 	if s.TargetPath != "" {
 		return s.TargetPath
 	}
-	if value := strings.TrimSpace(os.Getenv("VPN_ROUTER_BIN")); value != "" {
+	if value := strings.TrimSpace(os.Getenv("ROUTER_MANAGER_BIN")); value != "" {
 		return value
 	}
-	if value, err := exec.LookPath("vpn-router"); err == nil {
+	if value, err := exec.LookPath("router-manager"); err == nil {
 		if resolved, resolveErr := filepath.EvalSymlinks(value); resolveErr == nil {
 			return resolved
 		}
@@ -214,7 +214,7 @@ func binaryAssetName(goos string, goarch string) (string, error) {
 	}
 	switch goarch {
 	case "amd64", "arm64":
-		return "vpn-router-linux-" + goarch, nil
+		return "router-manager-linux-" + goarch, nil
 	default:
 		return "", fmt.Errorf("архитектура %s не поддерживается для автообновления", goarch)
 	}
@@ -274,7 +274,7 @@ func get(ctx context.Context, client *http.Client, url string) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	req.Header.Set("User-Agent", "vpn-router-updater")
+	req.Header.Set("User-Agent", "router-manager-updater")
 	req.Header.Set("Accept", "application/vnd.github+json")
 	if token := githubToken(); token != "" {
 		req.Header.Set("Authorization", "Bearer "+token)
@@ -296,14 +296,14 @@ func get(ctx context.Context, client *http.Client, url string) ([]byte, error) {
 }
 
 func githubToken() string {
-	if token := strings.TrimSpace(os.Getenv("VPN_ROUTER_GITHUB_TOKEN")); token != "" {
+	if token := strings.TrimSpace(os.Getenv("ROUTER_MANAGER_GITHUB_TOKEN")); token != "" {
 		return token
 	}
 	return strings.TrimSpace(os.Getenv("GITHUB_TOKEN"))
 }
 
 func writeTempBinary(data []byte) (string, error) {
-	tmp, err := os.CreateTemp("", "vpn-router-update-*")
+	tmp, err := os.CreateTemp("", "router-manager-update-*")
 	if err != nil {
 		return "", err
 	}
@@ -338,7 +338,7 @@ func backupBinary(target string, backupsDir string) (string, error) {
 	if err := os.MkdirAll(backupsDir, 0o700); err != nil {
 		return "", err
 	}
-	name := fmt.Sprintf("vpn-router.%s.bak", time.Now().UTC().Format("20060102T150405Z"))
+	name := fmt.Sprintf("router-manager.%s.bak", time.Now().UTC().Format("20060102T150405Z"))
 	backup := filepath.Join(backupsDir, name)
 	if err := copyFile(target, backup, info.Mode().Perm()); err != nil {
 		return "", err
@@ -348,12 +348,12 @@ func backupBinary(target string, backupsDir string) (string, error) {
 
 func installBinary(src string, target string) error {
 	if target == "" {
-		return fmt.Errorf("путь установки vpn-router не определён")
+		return fmt.Errorf("путь установки router-manager не определён")
 	}
 	if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
 		return err
 	}
-	tmp, err := os.CreateTemp(filepath.Dir(target), ".vpn-router-update-*")
+	tmp, err := os.CreateTemp(filepath.Dir(target), ".router-manager-update-*")
 	if err != nil {
 		return err
 	}

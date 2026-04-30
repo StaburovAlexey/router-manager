@@ -4,15 +4,15 @@ import (
 	"context"
 	"fmt"
 
-	"vpn-router/internal/config"
-	"vpn-router/internal/nftables"
-	"vpn-router/internal/reality"
-	"vpn-router/internal/shell"
-	"vpn-router/internal/singbox"
-	"vpn-router/internal/system"
+	"router-manager/internal/config"
+	"router-manager/internal/nftables"
+	"router-manager/internal/reality"
+	"router-manager/internal/shell"
+	"router-manager/internal/singbox"
+	"router-manager/internal/system"
 )
 
-func EnableVPN(ctx context.Context, runner shell.Runner, paths config.Paths) error {
+func EnableTunnel(ctx context.Context, runner shell.Runner, paths config.Paths) error {
 	if err := system.RequireRoot(); err != nil {
 		return err
 	}
@@ -21,7 +21,7 @@ func EnableVPN(ctx context.Context, runner shell.Runner, paths config.Paths) err
 		return err
 	}
 	if cfg.RUServer.IP == "" {
-		return fmt.Errorf("входной VPN-сервер не настроен")
+		return fmt.Errorf("входной сервер не настроен")
 	}
 	if err := ensureReality(&cfg); err != nil {
 		return err
@@ -33,14 +33,14 @@ func EnableVPN(ctx context.Context, runner shell.Runner, paths config.Paths) err
 	if err := singbox.ApplyConfig(ctx, runner, paths, data); err != nil {
 		return err
 	}
-	if err := nftables.Apply(ctx, runner, paths, cfg, "vpn"); err != nil {
+	if err := nftables.Apply(ctx, runner, paths, cfg, "tunnel"); err != nil {
 		return err
 	}
-	cfg.CurrentMode = "vpn"
+	cfg.CurrentMode = "tunnel"
 	if err := config.Save(paths, cfg); err != nil {
 		return err
 	}
-	link := reality.ClientLink(cfg.Reality.UUID, cfg.RUServer.IP, cfg.RUServer.VPNPort, cfg.Reality.PublicKey, cfg.Reality.ShortID, cfg.Reality.SNI, "vpn-router-ru")
+	link := reality.ClientLink(cfg.Reality.UUID, cfg.RUServer.IP, cfg.RUServer.TunnelPort, cfg.Reality.PublicKey, cfg.Reality.ShortID, cfg.Reality.SNI, "router-manager-ru")
 	return config.WriteSensitiveText(paths.ClientLink, link+"\n")
 }
 
@@ -69,7 +69,7 @@ func ensureReality(cfg *config.Config) error {
 		cfg.Reality.UUID = uuid
 	}
 	if cfg.Reality.SNI == "" || cfg.Reality.PublicKey == "" || cfg.Reality.ShortID == "" {
-		return fmt.Errorf("REALITY параметры входного VPN-сервера не настроены")
+		return fmt.Errorf("REALITY параметры входного сервера не настроены")
 	}
 	return nil
 }

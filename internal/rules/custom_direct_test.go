@@ -103,7 +103,7 @@ func TestFormatHumanShowsReadableRules(t *testing.T) {
 	set.Rules[0].DomainSuffix = []string{"gosuslugi.ru"}
 	set.Rules[2].IPCIDR = []string{"1.2.3.4/32"}
 	text := FormatHuman(set)
-	for _, want := range []string{"Сайты и адреса без VPN", "gosuslugi.ru и его поддомены", "1.2.3.4/32"} {
+	for _, want := range []string{"Сайты и адреса прямого доступа", "gosuslugi.ru и его поддомены", "1.2.3.4/32"} {
 		if !strings.Contains(text, want) {
 			t.Fatalf("human output does not contain %q:\n%s", want, text)
 		}

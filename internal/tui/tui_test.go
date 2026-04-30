@@ -7,8 +7,8 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
-	"vpn-router/internal/config"
-	"vpn-router/internal/shell"
+	"router-manager/internal/config"
+	"router-manager/internal/shell"
 )
 
 func TestTUIForeignMenuHasExecutableActions(t *testing.T) {
@@ -110,7 +110,7 @@ func TestTUIConfirmYesRunsActionInRussian(t *testing.T) {
 }
 
 func testModel() model {
-	return testModelWithPaths(config.NewPaths("/tmp/vpn-router-tui-test"))
+	return testModelWithPaths(config.NewPaths("/tmp/router-manager-tui-test"))
 }
 
 func testModelWithPaths(paths config.Paths) model {

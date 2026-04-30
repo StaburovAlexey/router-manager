@@ -7,8 +7,8 @@ import (
 	"strings"
 	"testing"
 
-	"vpn-router/internal/config"
-	"vpn-router/internal/shell"
+	"router-manager/internal/config"
+	"router-manager/internal/shell"
 )
 
 func TestRenderDirectAllowsAPToAnyCurrentUplink(t *testing.T) {
@@ -29,26 +29,26 @@ func TestRenderDirectAllowsAPToAnyCurrentUplink(t *testing.T) {
 	}
 }
 
-func TestRenderVPNAllowsTunAndDropsDirectWAN(t *testing.T) {
-	text := renderForTest(t, "vpn")
+func TestRenderTunnelAllowsTunAndDropsDirectWAN(t *testing.T) {
+	text := renderForTest(t, "tunnel")
 	for _, want := range []string{
 		`iifname "wlan0" oifname "tun0" accept`,
 		`iifname "wlan0" ip daddr 203.0.113.10 accept`,
 		`iifname "wlan0" drop`,
 	} {
 		if !strings.Contains(text, want) {
-			t.Fatalf("vpn nft config does not contain %q:\n%s", want, text)
+			t.Fatalf("tunnel nft config does not contain %q:\n%s", want, text)
 		}
 	}
 	if strings.Contains(text, `oifname "eth0"`) {
-		t.Fatalf("vpn config must not bind routing to a fixed WAN:\n%s", text)
+		t.Fatalf("tunnel config must not bind routing to a fixed WAN:\n%s", text)
 	}
 }
 
 func TestApplyDoesNotNeedWANInterface(t *testing.T) {
 	dir := t.TempDir()
 	paths := config.NewPaths(dir)
-	paths.NftablesConf = filepath.Join(dir, "nftables.d", "vpn-router.nft")
+	paths.NftablesConf = filepath.Join(dir, "nftables.d", "router-manager.nft")
 	paths.NftablesMainConf = filepath.Join(dir, "nftables.conf")
 	cfg := config.DefaultConfig()
 	cfg.MiniPC.WANInterface = "auto"
@@ -72,7 +72,7 @@ func TestApplyDoesNotNeedWANInterface(t *testing.T) {
 func TestEnsureMainIncludeCreatesConfig(t *testing.T) {
 	dir := t.TempDir()
 	paths := config.NewPaths(dir)
-	paths.NftablesConf = filepath.Join(dir, "nftables.d", "vpn-router.nft")
+	paths.NftablesConf = filepath.Join(dir, "nftables.d", "router-manager.nft")
 	paths.NftablesMainConf = filepath.Join(dir, "nftables.conf")
 	if err := ensureMainInclude(paths); err != nil {
 		t.Fatal(err)
@@ -82,7 +82,7 @@ func TestEnsureMainIncludeCreatesConfig(t *testing.T) {
 		t.Fatal(err)
 	}
 	if !strings.Contains(string(data), `include "`+paths.NftablesConf+`"`) {
-		t.Fatalf("main config does not include vpn-router nft file:\n%s", string(data))
+		t.Fatalf("main config does not include router-manager nft file:\n%s", string(data))
 	}
 }
 

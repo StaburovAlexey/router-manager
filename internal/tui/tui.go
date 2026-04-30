@@ -11,22 +11,22 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
-	"vpn-router/internal/config"
-	"vpn-router/internal/confirm"
-	"vpn-router/internal/diagnostics"
-	"vpn-router/internal/foreign"
-	"vpn-router/internal/modes"
-	"vpn-router/internal/restore"
-	"vpn-router/internal/ru"
-	"vpn-router/internal/rules"
-	"vpn-router/internal/selfupdate"
-	"vpn-router/internal/shell"
-	"vpn-router/internal/sshclient"
-	"vpn-router/internal/summary"
-	"vpn-router/internal/system"
-	"vpn-router/internal/uninstall"
-	"vpn-router/internal/ux"
-	"vpn-router/internal/wifi"
+	"router-manager/internal/config"
+	"router-manager/internal/confirm"
+	"router-manager/internal/diagnostics"
+	"router-manager/internal/foreign"
+	"router-manager/internal/modes"
+	"router-manager/internal/restore"
+	"router-manager/internal/ru"
+	"router-manager/internal/rules"
+	"router-manager/internal/selfupdate"
+	"router-manager/internal/shell"
+	"router-manager/internal/sshclient"
+	"router-manager/internal/summary"
+	"router-manager/internal/system"
+	"router-manager/internal/uninstall"
+	"router-manager/internal/ux"
+	"router-manager/internal/wifi"
 )
 
 type viewMode string
@@ -284,7 +284,7 @@ func (m model) View() string {
 
 func (m model) viewMenu() string {
 	var b strings.Builder
-	fmt.Fprintf(&b, "VPN Router Manager / %s\n\n", m.menuTitle())
+	fmt.Fprintf(&b, "Router Manager / %s\n\n", m.menuTitle())
 	for i, item := range m.items() {
 		cursor := " "
 		if m.cursor == i {
@@ -314,12 +314,12 @@ func (m model) viewPrompt() string {
 	if value == "" && m.prompt.def != "" {
 		value = "[" + m.prompt.def + "]"
 	}
-	return fmt.Sprintf("VPN Router Manager / %s\n\n%s: %s\n\nEnter - применить, Esc - отмена\n", m.prompt.title, m.prompt.label, value)
+	return fmt.Sprintf("Router Manager / %s\n\n%s: %s\n\nEnter - применить, Esc - отмена\n", m.prompt.title, m.prompt.label, value)
 }
 
 func (m model) viewForm() string {
 	var b strings.Builder
-	fmt.Fprintf(&b, "VPN Router Manager / %s\n\n", m.form.title)
+	fmt.Fprintf(&b, "Router Manager / %s\n\n", m.form.title)
 	for i, field := range m.form.fields {
 		if i < m.form.index {
 			fmt.Fprintf(&b, "%s: %s\n", field.label, m.form.values[field.key])
@@ -342,7 +342,7 @@ func (m model) viewForm() string {
 
 func (m model) viewConfirm() string {
 	var b strings.Builder
-	fmt.Fprintf(&b, "VPN Router Manager / %s\n\n%s\n\n", m.confirm.title, m.confirm.body)
+	fmt.Fprintf(&b, "Router Manager / %s\n\n%s\n\n", m.confirm.title, m.confirm.body)
 	if strings.TrimSpace(m.message) != "" {
 		fmt.Fprintln(&b, m.message)
 		fmt.Fprintln(&b)
@@ -364,8 +364,8 @@ func (m model) items() []item {
 	case "internet":
 		return []item{
 			{"Проверить состояние интернета", "status"},
-			{"Включить VPN", "vpn"},
-			{"Выключить VPN / прямой интернет", "direct"},
+			{"Включить маршрут через сервер", "tunnel"},
+			{"Отключить маршрут через сервер / прямой интернет", "direct"},
 			{"Выбрать выходной сервер", "menu:foreign-switch"},
 			{"Автоматически выбирать выходной сервер", "ru-auto"},
 			{"Назад", "back"},
@@ -447,9 +447,9 @@ func (m model) items() []item {
 		}
 	case "advanced":
 		return []item{
-			{"Входной VPN-сервер", "menu:ru"},
-			{"Выходные VPN-серверы", "menu:foreign"},
-			{"Правила без VPN в JSON", "direct-list"},
+			{"Входной сервер", "menu:ru"},
+			{"Выходные серверы", "menu:foreign"},
+			{"Правила прямого доступа в JSON", "direct-list"},
 			{"Назад", "back"},
 		}
 	case "backup":
@@ -462,7 +462,7 @@ func (m model) items() []item {
 		return []item{
 			{"Интернет", "menu:internet"},
 			{"Подключить устройство", "menu:connect"},
-			{"Сайты без VPN", "menu:direct-rules"},
+			{"Сайты прямого доступа", "menu:direct-rules"},
 			{"Wi-Fi", "menu:wifi"},
 			{"Проблемы и диагностика", "menu:problems"},
 			{"Обслуживание", "menu:maintenance"},
@@ -480,11 +480,11 @@ func (m model) menuTitle() string {
 	case "connect":
 		return "подключение устройства"
 	case "direct-rules":
-		return "сайты без VPN"
+		return "сайты прямого доступа"
 	case "ru":
-		return "входной VPN-сервер"
+		return "входной сервер"
 	case "foreign":
-		return "выходные VPN-серверы"
+		return "выходные серверы"
 	case "foreign-switch":
 		return "выбор выходного сервера"
 	case "wifi":
@@ -517,7 +517,7 @@ func (m model) run(action string) model {
 		if kind != "auto" {
 			label = "Значение " + kind
 		}
-		return m.startPrompt("Добавить без VPN", label, "", "direct-add:"+kind)
+		return m.startPrompt("Добавить правило прямого доступа", label, "", "direct-add:"+kind)
 	}
 	if strings.HasPrefix(action, "wifi-band:") {
 		return m.applyWiFi("Wi-Fi диапазон", func(cfg *config.Config) error {
@@ -553,9 +553,9 @@ func (m model) run(action string) model {
 	case "status", "diagnostics":
 		status, err := diagnostics.Collect(m.ctx, m.runner, m.paths)
 		return m.withResult(diagnostics.Format(status), err)
-	case "vpn":
-		err := modes.EnableVPN(m.ctx, m.runner, m.paths)
-		return m.withResult("VPN-режим включён.", err)
+	case "tunnel":
+		err := modes.EnableTunnel(m.ctx, m.runner, m.paths)
+		return m.withResult("Режим маршрутизации включён.", err)
 	case "direct":
 		err := modes.EnableDirect(m.ctx, m.runner, m.paths)
 		return m.withResult("Прямой интернет включён.", err)
@@ -577,7 +577,7 @@ func (m model) run(action string) model {
 	case "direct-list-human":
 		return m.showDirectRulesHuman()
 	case "direct-remove":
-		return m.startPrompt("Удалить без VPN", "Сайт, IP или подсеть", "", "direct-remove")
+		return m.startPrompt("Удалить правило прямого доступа", "Сайт, IP или подсеть", "", "direct-remove")
 	case "ru-status":
 		out, err := m.ruService().Status(m.ctx)
 		return m.withResult(out, err)
@@ -592,7 +592,7 @@ func (m model) run(action string) model {
 		out, err := m.ruService().Logs(m.ctx)
 		return m.withResult(out, err)
 	case "ru-rollback":
-		return m.startConfirm("Откат входного сервера", "Будет восстановлен последний backup /etc/sing-box/config.json на входном VPN-сервере.", "ru-rollback", "", nil)
+		return m.startConfirm("Откат входного сервера", "Будет восстановлен последний backup /etc/sing-box/config.json на входном сервере.", "ru-rollback", "", nil)
 	case "foreign-list":
 		return m.showForeignList()
 	case "foreign-add":
@@ -616,11 +616,11 @@ func (m model) run(action string) model {
 	case "backup-list":
 		return m.showBackups()
 	case "restore-network":
-		return m.startConfirm("Откат сети", "Будут остановлены hostapd/dnsmasq/sing-box, удалены nftables правила vpn-router и Wi-Fi будет возвращён в NetworkManager. Продолжить?", "restore-network", "", nil)
+		return m.startConfirm("Откат сети", "Будут остановлены hostapd/dnsmasq/sing-box, удалены nftables правила router-manager и Wi-Fi будет возвращён в NetworkManager. Продолжить?", "restore-network", "", nil)
 	case "update":
-		return m.startConfirm("Обновить приложение", "Будет скачан последний GitHub Release, проверен checksum, сделан backup текущего бинарника и установлен новый vpn-router. После обновления нужно заново открыть меню.", "update", "", nil)
+		return m.startConfirm("Обновить приложение", "Будет скачан последний GitHub Release, проверен checksum, сделан backup текущего бинарника и установлен новый router-manager. После обновления нужно заново открыть меню.", "update", "", nil)
 	case "uninstall":
-		return m.startConfirm("Полное удаление", "Будут удалены локальные настройки, данные, бинарник vpn-router, локальный sing-box и прикладные зависимости. Удалённые VPN-серверы не изменяются.\n\nПосле удаления это меню больше не откроется. Продолжить?", "uninstall", "", nil)
+		return m.startConfirm("Полное удаление", "Будут удалены локальные настройки, данные, бинарник router-manager, локальный sing-box и прикладные зависимости. Удалённые серверы не изменяются.\n\nПосле удаления это меню больше не откроется. Продолжить?", "uninstall", "", nil)
 	default:
 		return m
 	}
@@ -645,7 +645,7 @@ func (m model) runPrompt(action string, value string) model {
 		if err == nil {
 			err = rules.AfterChange(m.ctx, m.runner, m.paths)
 		}
-		return m.withResult(fmt.Sprintf("Добавлено без VPN: %s", added), err)
+		return m.withResult(fmt.Sprintf("Добавлено правило прямого доступа: %s", added), err)
 	}
 	switch action {
 	case "direct-remove":
@@ -697,16 +697,16 @@ func (m model) runForm(form formState) model {
 		if err != nil {
 			return m.withResult("", fmt.Errorf("SSH port должен быть числом"))
 		}
-		vpnPort, err := strconv.Atoi(form.values["vpn_port"])
+		tunnelPort, err := strconv.Atoi(form.values["tunnel_port"])
 		if err != nil {
-			return m.withResult("", fmt.Errorf("VPN port должен быть числом"))
+			return m.withResult("", fmt.Errorf("порт подключения должен быть числом"))
 		}
 		added, err := m.foreignService().Add(m.ctx, config.ForeignServer{
-			Name:    form.values["name"],
-			IP:      form.values["ip"],
-			SSHUser: form.values["ssh_user"],
-			SSHPort: sshPort,
-			VPNPort: vpnPort,
+			Name:       form.values["name"],
+			IP:         form.values["ip"],
+			SSHUser:    form.values["ssh_user"],
+			SSHPort:    sshPort,
+			TunnelPort: tunnelPort,
 		})
 		return m.withResult(fmt.Sprintf("Выходной сервер добавлен: %s, SNI: %s", added.Name, added.Reality.SNI), err)
 	default:
@@ -760,7 +760,7 @@ func (m model) runConfirm(confirm confirmState) model {
 		return m.withResult("Wi-Fi точка доступа перезапущена.", err)
 	case "restore-network":
 		err := (restore.Service{Paths: m.paths, Runner: m.runner}).Run(m.ctx)
-		return m.withResult("Локальные сетевые изменения vpn-router отключены.", err)
+		return m.withResult("Локальные сетевые изменения router-manager отключены.", err)
 	case "update":
 		var b strings.Builder
 		err := (selfupdate.Service{Paths: m.paths, CurrentVersion: m.version, Out: &b}).Run(m.ctx)
@@ -794,10 +794,10 @@ func (m model) startForeignForm() model {
 		action: "foreign-add",
 		fields: []formField{
 			{key: "name", label: "Имя выходного сервера", def: "out-1"},
-			{key: "ip", label: "IP выходного VPN-сервера", def: ""},
+			{key: "ip", label: "IP выходного сервера", def: ""},
 			{key: "ssh_user", label: "SSH user выходного сервера", def: "root"},
 			{key: "ssh_port", label: "SSH port выходного сервера", def: "22"},
-			{key: "vpn_port", label: "VPN port выходного сервера", def: "443"},
+			{key: "tunnel_port", label: "порт подключения выходного сервера", def: "443"},
 		},
 		values: map[string]string{},
 	}
@@ -831,8 +831,8 @@ func (m model) showConnectInfo() model {
 	fmt.Fprintln(&b)
 	fmt.Fprintf(&b, "Wi-Fi сеть: %s\n", valueOrNotConfigured(cfg.MiniPC.SSID))
 	fmt.Fprintf(&b, "Режим сейчас: %s\n", valueOrNotConfigured(cfg.CurrentMode))
-	if cfg.CurrentMode != "vpn" {
-		fmt.Fprintln(&b, "VPN сейчас выключен. Чтобы весь трафик Wi-Fi шёл через VPN, выберите: Интернет -> Включить VPN.")
+	if cfg.CurrentMode != "tunnel" {
+		fmt.Fprintln(&b, "Маршрут через сервер сейчас выключен. Чтобы весь трафик Wi-Fi шёл через него, выберите: Интернет -> Включить маршрут через сервер.")
 	}
 	if _, err := os.Stat(m.paths.ClientLink); err == nil {
 		fmt.Fprintln(&b, "QR-код клиента доступен в пункте: Показать QR-код клиента.")
@@ -847,7 +847,7 @@ func (m model) showConnectInfo() model {
 func (m model) showQR() model {
 	data, err := os.ReadFile(m.paths.ClientLink)
 	if err != nil {
-		return m.withResult("", fmt.Errorf("QR-ссылка не найдена: сначала запустите sudo vpn-router"))
+		return m.withResult("", fmt.Errorf("QR-ссылка не найдена: сначала запустите sudo router-manager"))
 	}
 	out, err := m.runner.Output(m.ctx, "qrencode", "-t", "ANSIUTF8", strings.TrimSpace(string(data)))
 	return m.withResult(out, err)
@@ -883,7 +883,7 @@ func (m model) showForeignList() model {
 	}
 	var b strings.Builder
 	for i, server := range servers.Servers {
-		fmt.Fprintf(&b, "%d) %s: %s:%d, SSH %s:%d, SNI %s\n", i+1, server.Name, server.IP, server.VPNPort, server.SSHUser, server.SSHPort, server.Reality.SNI)
+		fmt.Fprintf(&b, "%d) %s: %s:%d, SSH %s:%d, SNI %s\n", i+1, server.Name, server.IP, server.TunnelPort, server.SSHUser, server.SSHPort, server.Reality.SNI)
 	}
 	return m.withResult(b.String(), nil)
 }
@@ -896,7 +896,7 @@ func (m model) foreignSwitchItems() []item {
 	items := make([]item, 0, len(servers.Servers)+1)
 	for _, server := range servers.Servers {
 		items = append(items, item{
-			title:  fmt.Sprintf("%s -> %s:%d", server.Name, server.IP, server.VPNPort),
+			title:  fmt.Sprintf("%s -> %s:%d", server.Name, server.IP, server.TunnelPort),
 			action: "ru-use:" + server.Name,
 		})
 	}

@@ -9,7 +9,7 @@ import (
 	"strconv"
 	"strings"
 
-	"vpn-router/internal/shell"
+	"router-manager/internal/shell"
 )
 
 type Capabilities struct {

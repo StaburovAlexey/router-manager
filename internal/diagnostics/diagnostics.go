@@ -6,11 +6,11 @@ import (
 	"strings"
 	"time"
 
-	"vpn-router/internal/config"
-	"vpn-router/internal/network"
-	"vpn-router/internal/shell"
-	"vpn-router/internal/singbox"
-	"vpn-router/internal/system"
+	"router-manager/internal/config"
+	"router-manager/internal/network"
+	"router-manager/internal/shell"
+	"router-manager/internal/singbox"
+	"router-manager/internal/system"
 )
 
 type Status struct {
@@ -66,7 +66,7 @@ func Format(status Status) string {
 	fmt.Fprintln(&b, "Краткий статус:")
 	fmt.Fprintf(&b, "Интернет на устройстве: %s\n", internetSummary(status))
 	fmt.Fprintf(&b, "Wi-Fi раздача: %s\n", wifiSummary(status))
-	fmt.Fprintf(&b, "VPN: %s\n", vpnSummary(status))
+	fmt.Fprintf(&b, "Маршрут: %s\n", routeSummary(status))
 	fmt.Fprintf(&b, "DNS: %s\n", dnsSummary(status))
 	fmt.Fprintf(&b, "Клиентов Wi-Fi: %s\n", value(status.WiFiClientCount))
 	recommendations := recommendations(status)
@@ -88,7 +88,7 @@ func Format(status Status) string {
 	fmt.Fprintf(&b, "hostapd: %s\n", status.Hostapd)
 	fmt.Fprintf(&b, "dnsmasq: %s\n", status.Dnsmasq)
 	fmt.Fprintf(&b, "nftables: %s\n", status.Nftables)
-	fmt.Fprintf(&b, "Входной VPN-сервер: %s\n", value(status.RUServer))
+	fmt.Fprintf(&b, "Входной сервер: %s\n", value(status.RUServer))
 	fmt.Fprintf(&b, "Режим выходных серверов: %s\n", value(status.ForeignMode))
 	fmt.Fprintf(&b, "Выбранный выходной сервер: %s\n", value(status.SelectedForeign))
 	fmt.Fprintf(&b, "Публичный IP: %s\n", value(status.PublicIP))
@@ -103,7 +103,7 @@ func Report(ctx context.Context, runner shell.Runner, paths config.Paths) (strin
 		return "", err
 	}
 	var b strings.Builder
-	fmt.Fprintln(&b, "Отчёт диагностики vpn-router")
+	fmt.Fprintln(&b, "Отчёт диагностики router-manager")
 	fmt.Fprintln(&b, "Секреты, ключи и содержимое конфигов не выводятся.")
 	fmt.Fprintln(&b)
 	fmt.Fprint(&b, Format(status))
@@ -135,9 +135,9 @@ func wifiSummary(status Status) string {
 	return "ошибка"
 }
 
-func vpnSummary(status Status) string {
+func routeSummary(status Status) string {
 	switch status.Mode {
-	case "vpn":
+	case "tunnel":
 		if status.SingBox == "active" {
 			return "включён"
 		}
@@ -170,11 +170,11 @@ func recommendations(status Status) []string {
 	if status.Dnsmasq != "active" {
 		result = append(result, "DHCP/DNS для Wi-Fi не запущен; проверьте логи dnsmasq")
 	}
-	if status.Mode == "vpn" && status.SingBox != "active" {
-		result = append(result, "VPN включён в настройках, но sing-box не запущен; откройте логи")
+	if status.Mode == "tunnel" && status.SingBox != "active" {
+		result = append(result, "режим маршрутизации включён в настройках, но sing-box не запущен; откройте логи")
 	}
 	if status.DNS != "ok" {
-		result = append(result, "DNS не отвечает; перезапустите VPN-режим или проверьте логи sing-box")
+		result = append(result, "DNS не отвечает; перезапустите режим маршрутизации или проверьте логи sing-box")
 	}
 	return result
 }
@@ -194,9 +194,9 @@ func nextActions(status Status) []string {
 		case strings.Contains(rec, "DHCP/DNS"):
 			result = append(result, "откройте Проблемы и диагностика -> Показать логи и проверьте dnsmasq")
 		case strings.Contains(rec, "sing-box"):
-			result = append(result, "откройте Проблемы и диагностика -> Показать логи; затем попробуйте Интернет -> Включить VPN")
+			result = append(result, "откройте Проблемы и диагностика -> Показать логи; затем попробуйте Интернет -> Включить маршрут через сервер")
 		case strings.Contains(rec, "DNS"):
-			result = append(result, "попробуйте Интернет -> Выключить VPN, затем Интернет -> Включить VPN")
+			result = append(result, "попробуйте Интернет -> Отключить маршрут через сервер, затем Интернет -> Включить маршрут через сервер")
 		default:
 			result = append(result, rec)
 		}
@@ -226,7 +226,7 @@ func dnsStatus(ctx context.Context, runner shell.Runner) string {
 
 func nftablesStatus(ctx context.Context, runner shell.Runner) string {
 	service := system.ServiceStatus(ctx, runner, "nftables")
-	out, err := runner.Output(ctx, "nft", "list", "table", "inet", "vpn_router")
+	out, err := runner.Output(ctx, "nft", "list", "table", "inet", "router_manager")
 	if err == nil && strings.TrimSpace(out) != "" {
 		if service == "active" {
 			return "active"
@@ -265,7 +265,7 @@ func ruState(ctx context.Context, runner shell.Runner, cfg config.Config) (strin
 	}
 	ctx, cancel := context.WithTimeout(ctx, 3*time.Second)
 	defer cancel()
-	out, err := runner.Output(ctx, "ssh", "-o", "BatchMode=yes", "-o", "ConnectTimeout=2", "-p", fmt.Sprint(cfg.RUServer.SSHPort), cfg.RUServer.SSHUser+"@"+cfg.RUServer.IP, "cat /etc/ru-vpn/state.json 2>/dev/null || true")
+	out, err := runner.Output(ctx, "ssh", "-o", "BatchMode=yes", "-o", "ConnectTimeout=2", "-p", fmt.Sprint(cfg.RUServer.SSHPort), cfg.RUServer.SSHUser+"@"+cfg.RUServer.IP, "cat /etc/ru-tunnel/state.json 2>/dev/null || true")
 	if err != nil || out == "" {
 		return "неизвестно", ""
 	}

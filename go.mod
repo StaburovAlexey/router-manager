@@ -1,4 +1,4 @@
-module vpn-router
+module router-manager
 
 go 1.22
 

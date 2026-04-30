@@ -9,11 +9,11 @@ import (
 	"path/filepath"
 	"strings"
 
-	"vpn-router/internal/config"
-	"vpn-router/internal/restore"
-	"vpn-router/internal/shell"
-	"vpn-router/internal/singbox"
-	"vpn-router/internal/system"
+	"router-manager/internal/config"
+	"router-manager/internal/restore"
+	"router-manager/internal/shell"
+	"router-manager/internal/singbox"
+	"router-manager/internal/system"
 )
 
 var RemovableAptPackages = []string{
@@ -71,13 +71,13 @@ func (s Service) Run(ctx context.Context) error {
 			}
 			return (restore.Service{Paths: s.Paths, Runner: s.Runner, Out: s.Out}).Run(ctx)
 		}},
-		{"Удаление данных vpn-router", func() error {
+		{"Удаление данных router-manager", func() error {
 			return os.RemoveAll(s.Paths.BaseDir)
 		}},
 		{"Удаление локального sing-box, установленного приложением", func() error {
 			return s.removeSingBox(ctx)
 		}},
-		{"Удаление бинарника vpn-router", func() error {
+		{"Удаление бинарника router-manager", func() error {
 			return s.removeBinaries()
 		}},
 	}
@@ -99,15 +99,15 @@ func (s Service) Run(ctx context.Context) error {
 	if len(errors) > 0 {
 		return fmt.Errorf("удаление выполнено частично:\n%s", strings.Join(errors, "\n"))
 	}
-	fmt.Fprintln(s.Out, "vpn-router удалён с устройства.")
-	fmt.Fprintln(s.Out, "Удалённые VPN-серверы не изменялись.")
+	fmt.Fprintln(s.Out, "router-manager удалён с устройства.")
+	fmt.Fprintln(s.Out, "Удалённые серверы не изменялись.")
 	return nil
 }
 
 func (s Service) removeSingBox(ctx context.Context) error {
 	_ = system.Systemctl(ctx, s.Runner, "stop", singbox.Service)
 	_ = system.Systemctl(ctx, s.Runner, "disable", singbox.Service)
-	if isVPNRouterSingBoxUnit(singbox.UnitPath) {
+	if isRouterManagerSingBoxUnit(singbox.UnitPath) {
 		_ = os.Remove(singbox.UnitPath)
 		_ = s.Runner.Run(ctx, "systemctl", "daemon-reload")
 	}
@@ -152,21 +152,21 @@ type step struct {
 }
 
 func defaultBinaryPaths() []string {
-	paths := []string{"/usr/local/sbin/vpn-router"}
-	if current, err := os.Executable(); err == nil && filepath.Base(current) == "vpn-router" {
+	paths := []string{"/usr/local/sbin/router-manager"}
+	if current, err := os.Executable(); err == nil && filepath.Base(current) == "router-manager" {
 		paths = append(paths, current)
 	}
-	if found, err := exec.LookPath("vpn-router"); err == nil {
+	if found, err := exec.LookPath("router-manager"); err == nil {
 		paths = append(paths, found)
 	}
 	return paths
 }
 
-func isVPNRouterSingBoxUnit(path string) bool {
+func isRouterManagerSingBoxUnit(path string) bool {
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return false
 	}
 	text := string(data)
-	return strings.Contains(text, "VPN Router Manager") || strings.Contains(text, "vpn-router")
+	return strings.Contains(text, "Router Manager") || strings.Contains(text, "router-manager")
 }

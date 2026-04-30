@@ -9,10 +9,10 @@ import (
 	"sort"
 	"strings"
 
-	"vpn-router/internal/config"
-	"vpn-router/internal/shell"
-	"vpn-router/internal/singbox"
-	"vpn-router/internal/system"
+	"router-manager/internal/config"
+	"router-manager/internal/shell"
+	"router-manager/internal/singbox"
+	"router-manager/internal/system"
 )
 
 type Service struct {
@@ -30,7 +30,7 @@ func (s Service) Run(ctx context.Context) error {
 	}
 	cfg, _ := config.Load(s.Paths)
 	steps := []step{
-		{"Остановка служб vpn-router", func() error {
+		{"Остановка служб router-manager", func() error {
 			_ = system.Systemctl(ctx, s.Runner, "stop", singbox.Service)
 			_ = system.Systemctl(ctx, s.Runner, "disable", singbox.Service)
 			_ = system.Systemctl(ctx, s.Runner, "stop", "hostapd")
@@ -39,14 +39,14 @@ func (s Service) Run(ctx context.Context) error {
 			_ = system.Systemctl(ctx, s.Runner, "disable", "dnsmasq")
 			return nil
 		}},
-		{"Удаление nftables table vpn_router", func() error {
-			_ = s.Runner.Run(ctx, "nft", "delete", "table", "inet", "vpn_router")
+		{"Удаление nftables table router_manager", func() error {
+			_ = s.Runner.Run(ctx, "nft", "delete", "table", "inet", "router_manager")
 			_ = os.Remove(s.Paths.NftablesConf)
 			_ = removeLineContaining(s.Paths.NftablesMainConf, s.Paths.NftablesConf)
 			_ = system.Systemctl(ctx, s.Runner, "restart", "nftables")
 			return nil
 		}},
-		{"Отключение IPv4 forwarding vpn-router", func() error {
+		{"Отключение IPv4 forwarding router-manager", func() error {
 			_ = os.Remove(s.Paths.SysctlConf)
 			_ = s.Runner.Run(ctx, "sysctl", "-w", "net.ipv4.ip_forward=0")
 			return nil
@@ -86,8 +86,8 @@ func (s Service) Run(ctx context.Context) error {
 	if len(errors) > 0 {
 		return fmt.Errorf("откат выполнен частично:\n%s", strings.Join(errors, "\n"))
 	}
-	fmt.Fprintln(s.Out, "Локальные сетевые изменения vpn-router отключены.")
-	fmt.Fprintln(s.Out, "Удалённые VPN-серверы не изменялись.")
+	fmt.Fprintln(s.Out, "Локальные сетевые изменения router-manager отключены.")
+	fmt.Fprintln(s.Out, "Удалённые серверы не изменялись.")
 	return nil
 }
 

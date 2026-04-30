@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"strings"
 
-	"vpn-router/internal/shell"
+	"router-manager/internal/shell"
 )
 
 func Systemctl(ctx context.Context, runner shell.Runner, action string, service string) error {

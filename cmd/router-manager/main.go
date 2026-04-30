@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"os"
 
-	"vpn-router/internal/app"
-	"vpn-router/internal/ux"
+	"router-manager/internal/app"
+	"router-manager/internal/ux"
 )
 
 var version = "dev"

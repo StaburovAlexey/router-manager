@@ -30,10 +30,10 @@ jobs:
           mkdir -p dist
           for arch in amd64 arm64; do
             GOOS=linux GOARCH="${arch}" CGO_ENABLED=0 \
-              go build -ldflags "-X main.version=${VERSION}" \
-              -o "dist/vpn-router-linux-${arch}" ./cmd/vpn-router
+              go build -trimpath -ldflags "-s -w -X main.version=${VERSION}" \
+              -o "dist/router-manager-linux-${arch}" ./cmd/router-manager
           done
-          (cd dist && sha256sum vpn-router-linux-* > checksums.txt)
+          (cd dist && sha256sum router-manager-linux-* > checksums.txt)
 
       - name: Create GitHub Release
         env:
@@ -41,7 +41,7 @@ jobs:
           TAG: ${{ github.ref_name }}
         run: |
           if gh release view "${TAG}" >/dev/null 2>&1; then
-            gh release upload "${TAG}" dist/vpn-router-linux-amd64 dist/vpn-router-linux-arm64 dist/checksums.txt --clobber
+            gh release upload "${TAG}" dist/router-manager-linux-amd64 dist/router-manager-linux-arm64 dist/checksums.txt --clobber
           else
-            gh release create "${TAG}" dist/vpn-router-linux-amd64 dist/vpn-router-linux-arm64 dist/checksums.txt --title "${TAG}" --generate-notes
+            gh release create "${TAG}" dist/router-manager-linux-amd64 dist/router-manager-linux-arm64 dist/checksums.txt --title "${TAG}" --generate-notes
           fi

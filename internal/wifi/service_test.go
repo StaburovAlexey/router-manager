@@ -6,8 +6,8 @@ import (
 	"strings"
 	"testing"
 
-	"vpn-router/internal/config"
-	"vpn-router/internal/shell"
+	"router-manager/internal/config"
+	"router-manager/internal/shell"
 )
 
 func TestSwitchAccessPointAppliesRecommendationAndReleasesOldAdapter(t *testing.T) {
@@ -83,7 +83,7 @@ func testWiFiPaths(t *testing.T) config.Paths {
 	paths.HostapdConf = filepath.Join(dir, "hostapd.conf")
 	paths.DnsmasqConf = filepath.Join(dir, "dnsmasq.conf")
 	paths.NftablesMainConf = filepath.Join(dir, "nftables.conf")
-	paths.NftablesConf = filepath.Join(dir, "vpn-router.nft")
+	paths.NftablesConf = filepath.Join(dir, "router-manager.nft")
 	paths.SingBoxLocalConf = filepath.Join(dir, "sing-box.json")
 	return paths
 }

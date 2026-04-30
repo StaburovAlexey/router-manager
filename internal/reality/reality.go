@@ -42,7 +42,7 @@ func (s Selector) Select(ctx context.Context) (string, error) {
 
 func ClientLink(uuid, host string, port int, publicKey, shortID, sni, name string) string {
 	if name == "" {
-		name = "vpn-router-ru"
+		name = "router-manager-ru"
 	}
 	return fmt.Sprintf(
 		"vless://%s@%s:%d?security=reality&sni=%s&fp=chrome&pbk=%s&sid=%s&type=tcp&flow=xtls-rprx-vision#%s",

@@ -1,12 +1,12 @@
 package config
 
 type Config struct {
-	MiniPC      MiniPCConfig   `json:"mini_pc"`
-	WiFi        WiFiConfig     `json:"wifi"`
-	RUServer    RUServerConfig `json:"ru_server"`
-	Reality     RealityRuntime `json:"reality,omitempty"`
-	VPNPolicy   VPNPolicy      `json:"vpn_policy"`
-	CurrentMode string         `json:"current_mode"`
+	MiniPC        MiniPCConfig   `json:"mini_pc"`
+	WiFi          WiFiConfig     `json:"wifi"`
+	RUServer      RUServerConfig `json:"ru_server"`
+	Reality       RealityRuntime `json:"reality,omitempty"`
+	RoutingPolicy RoutingPolicy  `json:"tunnel_policy"`
+	CurrentMode   string         `json:"current_mode"`
 }
 
 type MiniPCConfig struct {
@@ -30,13 +30,13 @@ type WiFiConfig struct {
 }
 
 type RUServerConfig struct {
-	IP      string `json:"ip"`
-	SSHUser string `json:"ssh_user"`
-	SSHPort int    `json:"ssh_port"`
-	VPNPort int    `json:"vpn_port"`
+	IP         string `json:"ip"`
+	SSHUser    string `json:"ssh_user"`
+	SSHPort    int    `json:"ssh_port"`
+	TunnelPort int    `json:"tunnel_port"`
 }
 
-type VPNPolicy struct {
+type RoutingPolicy struct {
 	Mode                string `json:"mode"`
 	CustomDirectEnabled bool   `json:"custom_direct_enabled"`
 }
@@ -46,12 +46,12 @@ type ForeignServers struct {
 }
 
 type ForeignServer struct {
-	Name    string        `json:"name"`
-	IP      string        `json:"ip"`
-	SSHUser string        `json:"ssh_user"`
-	SSHPort int           `json:"ssh_port"`
-	VPNPort int           `json:"vpn_port"`
-	Reality RealityConfig `json:"reality"`
+	Name       string        `json:"name"`
+	IP         string        `json:"ip"`
+	SSHUser    string        `json:"ssh_user"`
+	SSHPort    int           `json:"ssh_port"`
+	TunnelPort int           `json:"tunnel_port"`
+	Reality    RealityConfig `json:"reality"`
 }
 
 type RealityConfig struct {
@@ -75,7 +75,7 @@ type RURemoteState struct {
 func DefaultConfig() Config {
 	return Config{
 		MiniPC: MiniPCConfig{
-			SSID:       "MyVPNRouter",
+			SSID:       "MyRouterManager",
 			LANCIDR:    "10.77.0.0/24",
 			LANGateway: "10.77.0.1",
 		},
@@ -88,7 +88,7 @@ func DefaultConfig() Config {
 			IEEE80211n:   true,
 			IEEE80211ac:  true,
 		},
-		VPNPolicy: VPNPolicy{
+		RoutingPolicy: RoutingPolicy{
 			Mode:                "rule_set",
 			CustomDirectEnabled: true,
 		},

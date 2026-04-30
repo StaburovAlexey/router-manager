@@ -10,11 +10,11 @@ import (
 	"strconv"
 	"strings"
 
-	"vpn-router/internal/config"
-	"vpn-router/internal/network"
-	"vpn-router/internal/shell"
-	"vpn-router/internal/system"
-	"vpn-router/templates"
+	"router-manager/internal/config"
+	"router-manager/internal/network"
+	"router-manager/internal/shell"
+	"router-manager/internal/system"
+	"router-manager/templates"
 )
 
 type HostapdTemplateData struct {

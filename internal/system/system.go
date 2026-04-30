@@ -10,7 +10,7 @@ import (
 	"strconv"
 	"strings"
 
-	"vpn-router/internal/shell"
+	"router-manager/internal/shell"
 )
 
 type OSRelease struct {
@@ -21,7 +21,7 @@ type OSRelease struct {
 
 func RequireRoot() error {
 	if os.Geteuid() != 0 {
-		return fmt.Errorf("эта команда должна быть запущена от root: используйте sudo vpn-router")
+		return fmt.Errorf("эта команда должна быть запущена от root: используйте sudo router-manager")
 	}
 	return nil
 }

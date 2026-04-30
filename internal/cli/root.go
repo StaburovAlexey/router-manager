@@ -13,24 +13,24 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"vpn-router/internal/bootstrap"
-	"vpn-router/internal/config"
-	"vpn-router/internal/confirm"
-	"vpn-router/internal/diagnostics"
-	"vpn-router/internal/foreign"
-	"vpn-router/internal/modes"
-	"vpn-router/internal/restore"
-	"vpn-router/internal/ru"
-	"vpn-router/internal/rules"
-	"vpn-router/internal/selfupdate"
-	"vpn-router/internal/setup"
-	"vpn-router/internal/shell"
-	"vpn-router/internal/sshclient"
-	"vpn-router/internal/summary"
-	"vpn-router/internal/system"
-	"vpn-router/internal/tui"
-	"vpn-router/internal/uninstall"
-	"vpn-router/internal/wifi"
+	"router-manager/internal/bootstrap"
+	"router-manager/internal/config"
+	"router-manager/internal/confirm"
+	"router-manager/internal/diagnostics"
+	"router-manager/internal/foreign"
+	"router-manager/internal/modes"
+	"router-manager/internal/restore"
+	"router-manager/internal/ru"
+	"router-manager/internal/rules"
+	"router-manager/internal/selfupdate"
+	"router-manager/internal/setup"
+	"router-manager/internal/shell"
+	"router-manager/internal/sshclient"
+	"router-manager/internal/summary"
+	"router-manager/internal/system"
+	"router-manager/internal/tui"
+	"router-manager/internal/uninstall"
+	"router-manager/internal/wifi"
 )
 
 type Options struct {
@@ -45,8 +45,8 @@ func NewRoot(opts Options) *cobra.Command {
 	}
 	ctx := context.Background()
 	root := &cobra.Command{
-		Use:           "vpn-router",
-		Short:         "VPN Router Manager",
+		Use:           "router-manager",
+		Short:         "Router Manager",
 		Version:       opts.Version,
 		SilenceUsage:  true,
 		SilenceErrors: true,
@@ -69,7 +69,7 @@ func NewRoot(opts Options) *cobra.Command {
 	commands := []*cobra.Command{
 		bootstrapCmd(ctx, opts),
 		setupCmd(ctx, opts),
-		vpnCmd(ctx, opts),
+		tunnelCmd(ctx, opts),
 		directCmd(ctx, opts),
 		statusCmd(ctx, opts),
 		reportCmd(ctx, opts),
@@ -98,7 +98,7 @@ func updateCmd(ctx context.Context, opts Options) *cobra.Command {
 			}
 			if !yes {
 				reader := bufio.NewReader(os.Stdin)
-				if !confirm.AskYesNo(reader, cmd.OutOrStdout(), "Скачать и установить последний релиз vpn-router?") {
+				if !confirm.AskYesNo(reader, cmd.OutOrStdout(), "Скачать и установить последний релиз router-manager?") {
 					fmt.Fprintln(cmd.OutOrStdout(), "Операция отменена.")
 					return nil
 				}
@@ -119,7 +119,7 @@ func updateCmd(ctx context.Context, opts Options) *cobra.Command {
 func restoreNetworkCmd(ctx context.Context, opts Options) *cobra.Command {
 	return &cobra.Command{
 		Use:   "restore-network",
-		Short: "Откатить локальные сетевые изменения vpn-router",
+		Short: "Откатить локальные сетевые изменения router-manager",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return (restore.Service{Paths: opts.Paths, Runner: opts.Runner, Out: cmd.OutOrStdout()}).Run(ctx)
 		},
@@ -131,16 +131,16 @@ func uninstallCmd(ctx context.Context, opts Options) *cobra.Command {
 	var keepDeps bool
 	cmd := &cobra.Command{
 		Use:   "uninstall",
-		Short: "Полностью удалить vpn-router с устройства",
+		Short: "Полностью удалить router-manager с устройства",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if err := system.RequireRoot(); err != nil {
 				return err
 			}
 			if !yes {
 				reader := bufio.NewReader(os.Stdin)
-				fmt.Fprintln(cmd.OutOrStdout(), "Будут удалены локальные настройки, данные, бинарник vpn-router и прикладные зависимости.")
-				fmt.Fprintln(cmd.OutOrStdout(), "Удалённые VPN-серверы не изменяются.")
-				if !confirm.AskYesNo(reader, cmd.OutOrStdout(), "Полностью удалить vpn-router с этого устройства?") {
+				fmt.Fprintln(cmd.OutOrStdout(), "Будут удалены локальные настройки, данные, бинарник router-manager и прикладные зависимости.")
+				fmt.Fprintln(cmd.OutOrStdout(), "Удалённые серверы не изменяются.")
+				if !confirm.AskYesNo(reader, cmd.OutOrStdout(), "Полностью удалить router-manager с этого устройства?") {
 					fmt.Fprintln(cmd.OutOrStdout(), "Операция отменена.")
 					return nil
 				}
@@ -162,7 +162,7 @@ func bootstrapCmd(ctx context.Context, opts Options) *cobra.Command {
 	return &cobra.Command{
 		Hidden: true,
 		Use:    "bootstrap",
-		Short:  "Подготовить систему и установить vpn-router",
+		Short:  "Подготовить систему и установить router-manager",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return (bootstrap.Service{Paths: opts.Paths, Runner: opts.Runner, Stdout: cmd.OutOrStdout()}).Run(ctx)
 		},
@@ -173,22 +173,22 @@ func setupCmd(ctx context.Context, opts Options) *cobra.Command {
 	return &cobra.Command{
 		Hidden: true,
 		Use:    "setup",
-		Short:  "Пошаговая настройка устройства и VPN-серверов",
+		Short:  "Пошаговая настройка устройства и серверов",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return (setup.Service{Paths: opts.Paths, Runner: opts.Runner, In: os.Stdin, Out: cmd.OutOrStdout()}).Run(ctx)
 		},
 	}
 }
 
-func vpnCmd(ctx context.Context, opts Options) *cobra.Command {
+func tunnelCmd(ctx context.Context, opts Options) *cobra.Command {
 	return &cobra.Command{
-		Use:   "vpn",
-		Short: "Включить VPN",
+		Use:   "tunnel",
+		Short: "Включить маршрут через сервер",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			if err := modes.EnableVPN(ctx, opts.Runner, opts.Paths); err != nil {
+			if err := modes.EnableTunnel(ctx, opts.Runner, opts.Paths); err != nil {
 				return err
 			}
-			fmt.Fprintln(cmd.OutOrStdout(), "VPN-режим включён.")
+			fmt.Fprintln(cmd.OutOrStdout(), "Режим маршрутизации включён.")
 			return nil
 		},
 	}
@@ -197,7 +197,7 @@ func vpnCmd(ctx context.Context, opts Options) *cobra.Command {
 func directCmd(ctx context.Context, opts Options) *cobra.Command {
 	return &cobra.Command{
 		Use:   "direct",
-		Short: "Отключить VPN и включить прямой интернет",
+		Short: "Отключить маршрут через сервер и включить прямой интернет",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if err := modes.EnableDirect(ctx, opts.Runner, opts.Paths); err != nil {
 				return err
@@ -275,7 +275,7 @@ func qrCmd(ctx context.Context, opts Options) *cobra.Command {
 		RunE: func(cmd *cobra.Command, args []string) error {
 			data, err := os.ReadFile(opts.Paths.ClientLink)
 			if err != nil {
-				return fmt.Errorf("QR-ссылка не найдена: сначала запустите sudo vpn-router")
+				return fmt.Errorf("QR-ссылка не найдена: сначала запустите sudo router-manager")
 			}
 			out, err := opts.Runner.Output(ctx, "qrencode", "-t", "ANSIUTF8", strings.TrimSpace(string(data)))
 			if err != nil {
@@ -290,7 +290,7 @@ func qrCmd(ctx context.Context, opts Options) *cobra.Command {
 func directRulesCommands(ctx context.Context, opts Options) []*cobra.Command {
 	add := &cobra.Command{
 		Use:   "direct-add <site|domain|suffix|ip|cidr> <value>",
-		Short: "Добавить сайт или адрес прямого доступа без VPN",
+		Short: "Добавить сайт или адрес прямого доступа прямого доступа",
 		Args:  cobra.ExactArgs(2),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if err := system.RequireRoot(); err != nil {
@@ -386,7 +386,7 @@ func directRulesCommands(ctx context.Context, opts Options) []*cobra.Command {
 
 func ruCmd(ctx context.Context, opts Options) *cobra.Command {
 	svc := ru.Service{Paths: opts.Paths, Runner: opts.Runner, SSH: sshclient.Client{Runner: opts.Runner}}
-	cmd := &cobra.Command{Use: "ru", Short: "Управление входным VPN-сервером"}
+	cmd := &cobra.Command{Use: "ru", Short: "Управление входным сервером"}
 	cmd.AddCommand(&cobra.Command{
 		Use:   "auto",
 		Short: "Автоматически выбирать выходной сервер",
@@ -469,7 +469,7 @@ func ruCmd(ctx context.Context, opts Options) *cobra.Command {
 
 func foreignCmd(ctx context.Context, opts Options) *cobra.Command {
 	svc := foreign.Service{Paths: opts.Paths, Runner: opts.Runner, SSH: sshclient.Client{Runner: opts.Runner}}
-	cmd := &cobra.Command{Use: "foreign", Short: "Управление выходными VPN-серверами"}
+	cmd := &cobra.Command{Use: "foreign", Short: "Управление выходными серверами"}
 	cmd.AddCommand(&cobra.Command{
 		Use:   "add",
 		Short: "Добавить выходной сервер",
@@ -773,11 +773,11 @@ func updateWiFi(ctx context.Context, opts Options, cmd *cobra.Command, mutate fu
 func askForeignServer(out io.Writer) config.ForeignServer {
 	reader := bufio.NewReader(os.Stdin)
 	return config.ForeignServer{
-		Name:    prompt(reader, out, "Имя выходного сервера", "out-1"),
-		IP:      prompt(reader, out, "IP выходного VPN-сервера", ""),
-		SSHUser: prompt(reader, out, "SSH user выходного сервера", "root"),
-		SSHPort: promptInt(reader, out, "SSH port выходного сервера", 22),
-		VPNPort: promptInt(reader, out, "VPN port выходного сервера", 443),
+		Name:       prompt(reader, out, "Имя выходного сервера", "out-1"),
+		IP:         prompt(reader, out, "IP выходного сервера", ""),
+		SSHUser:    prompt(reader, out, "SSH user выходного сервера", "root"),
+		SSHPort:    promptInt(reader, out, "SSH port выходного сервера", 22),
+		TunnelPort: promptInt(reader, out, "порт подключения выходного сервера", 443),
 	}
 }
 
@@ -806,7 +806,7 @@ func printForeignList(cmd *cobra.Command, paths config.Paths) error {
 		return nil
 	}
 	for _, server := range servers.Servers {
-		fmt.Fprintf(cmd.OutOrStdout(), "%s: %s:%d, SSH %s:%d, SNI %s\n", server.Name, server.IP, server.VPNPort, server.SSHUser, server.SSHPort, server.Reality.SNI)
+		fmt.Fprintf(cmd.OutOrStdout(), "%s: %s:%d, SSH %s:%d, SNI %s\n", server.Name, server.IP, server.TunnelPort, server.SSHUser, server.SSHPort, server.Reality.SNI)
 	}
 	return nil
 }

@@ -5,11 +5,11 @@ import (
 	"fmt"
 	"strings"
 
-	"vpn-router/internal/config"
-	"vpn-router/internal/reality"
-	"vpn-router/internal/shell"
-	"vpn-router/internal/singbox"
-	"vpn-router/internal/sshclient"
+	"router-manager/internal/config"
+	"router-manager/internal/reality"
+	"router-manager/internal/shell"
+	"router-manager/internal/singbox"
+	"router-manager/internal/sshclient"
 )
 
 type Service struct {
@@ -116,7 +116,7 @@ func (s Service) Cleanup(ctx context.Context, name string) error {
 		return err
 	}
 	target := sshclient.Target{User: server.SSHUser, IP: server.IP, Port: server.SSHPort}
-	_, err = s.SSH.Run(ctx, target, `systemctl disable --now sing-box || true; install -d -m 700 /etc/sing-box/backups; if [ -f /etc/sing-box/config.json ]; then mv /etc/sing-box/config.json /etc/sing-box/backups/config.$(date -u +%Y%m%dT%H%M%SZ).json; fi; rm -rf /etc/foreign-vpn`)
+	_, err = s.SSH.Run(ctx, target, `systemctl disable --now sing-box || true; install -d -m 700 /etc/sing-box/backups; if [ -f /etc/sing-box/config.json ]; then mv /etc/sing-box/config.json /etc/sing-box/backups/config.$(date -u +%Y%m%dT%H%M%SZ).json; fi; rm -rf /etc/foreign-tunnel`)
 	return err
 }
 
@@ -163,7 +163,7 @@ func (s Service) applyRemoteConfig(ctx context.Context, target sshclient.Target,
 		uuid = cfg.Reality.UUID
 	}
 	if uuid == "" {
-		return fmt.Errorf("REALITY UUID не настроен: сначала запустите sudo vpn-router")
+		return fmt.Errorf("REALITY UUID не настроен: сначала запустите sudo router-manager")
 	}
 	data, err := singbox.RenderForeign(server, uuid, privateKey)
 	if err != nil {
@@ -236,7 +236,7 @@ func validSelectedForeign(servers config.ForeignServers, selected string) string
 }
 
 func selectedForeignOnRU(ctx context.Context, ssh sshclient.Client, target sshclient.Target) (string, error) {
-	out, err := ssh.Run(ctx, target, "cat /etc/ru-vpn/state.json 2>/dev/null || true")
+	out, err := ssh.Run(ctx, target, "cat /etc/ru-tunnel/state.json 2>/dev/null || true")
 	if err != nil {
 		return "", err
 	}

@@ -7,9 +7,9 @@ import (
 	"strings"
 	"testing"
 
-	"vpn-router/internal/config"
-	"vpn-router/internal/shell"
-	"vpn-router/internal/sshclient"
+	"router-manager/internal/config"
+	"router-manager/internal/shell"
+	"router-manager/internal/sshclient"
 )
 
 func TestCollectFindsManagedFilesAndRuntimeConflicts(t *testing.T) {
@@ -18,7 +18,7 @@ func TestCollectFindsManagedFilesAndRuntimeConflicts(t *testing.T) {
 	paths.SingBoxLocalConf = filepath.Join(dir, "sing-box", "config.json")
 	paths.HostapdConf = filepath.Join(dir, "hostapd.conf")
 	paths.DnsmasqConf = filepath.Join(dir, "dnsmasq.conf")
-	paths.NftablesConf = filepath.Join(dir, "vpn-router.nft")
+	paths.NftablesConf = filepath.Join(dir, "router-manager.nft")
 	paths.SysctlConf = filepath.Join(dir, "sysctl.conf")
 	for _, path := range []string{paths.SingBoxLocalConf, paths.HostapdConf, paths.DnsmasqConf, paths.NftablesConf, paths.SysctlConf} {
 		if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
@@ -29,13 +29,13 @@ func TestCollectFindsManagedFilesAndRuntimeConflicts(t *testing.T) {
 		}
 	}
 	runner := &shell.DryRunner{Outputs: map[string]string{
-		"ip link show tun0":              "1: tun0: <POINTOPOINT>",
-		"nft list table inet vpn_router": "table inet vpn_router {}",
-		"systemctl is-active sing-box":   "active",
+		"ip link show tun0":                  "1: tun0: <POINTOPOINT>",
+		"nft list table inet router_manager": "table inet router_manager {}",
+		"systemctl is-active sing-box":       "active",
 	}}
 	findings := Collect(context.Background(), runner, paths)
 	text := Format(findings)
-	for _, want := range []string{"Локальный sing-box config", "hostapd config", "TUN interface tun0", "nftables table inet vpn_router", "Служба sing-box уже active", "да"} {
+	for _, want := range []string{"Локальный sing-box config", "hostapd config", "TUN interface tun0", "nftables table inet router_manager", "Служба sing-box уже active", "да"} {
 		if !strings.Contains(text, want) {
 			t.Fatalf("preflight output does not contain %q:\n%s", want, text)
 		}

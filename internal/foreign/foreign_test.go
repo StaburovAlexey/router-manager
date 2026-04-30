@@ -3,7 +3,7 @@ package foreign
 import (
 	"testing"
 
-	"vpn-router/internal/config"
+	"router-manager/internal/config"
 )
 
 func TestValidSelectedForeignFallsBackToAutoWhenMissing(t *testing.T) {

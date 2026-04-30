@@ -5,12 +5,12 @@ import (
 	"strings"
 	"testing"
 
-	"vpn-router/internal/shell"
-	"vpn-router/internal/sshclient"
+	"router-manager/internal/shell"
+	"router-manager/internal/sshclient"
 )
 
 func TestEnsureRemoteInstalledUsesVersionedReleaseAndSystemdUnit(t *testing.T) {
-	t.Setenv("VPN_ROUTER_SING_BOX_VERSION", "1.12.0")
+	t.Setenv("ROUTER_MANAGER_SING_BOX_VERSION", "1.12.0")
 	runner := &shell.DryRunner{}
 	ssh := sshclient.Client{Runner: runner}
 	target := sshclient.Target{User: "root", IP: "203.0.113.10", Port: 22}

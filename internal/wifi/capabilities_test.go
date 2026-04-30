@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"vpn-router/internal/shell"
+	"router-manager/internal/shell"
 )
 
 func TestParseCapabilities(t *testing.T) {

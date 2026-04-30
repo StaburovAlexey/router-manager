@@ -8,11 +8,11 @@ import (
 	"os/exec"
 	"path/filepath"
 
-	"vpn-router/internal/config"
-	"vpn-router/internal/rules"
-	"vpn-router/internal/shell"
-	"vpn-router/internal/singbox"
-	"vpn-router/internal/system"
+	"router-manager/internal/config"
+	"router-manager/internal/rules"
+	"router-manager/internal/shell"
+	"router-manager/internal/singbox"
+	"router-manager/internal/system"
 )
 
 var AptDependencies = []string{
@@ -75,15 +75,15 @@ func (s Service) Run(ctx context.Context) error {
 	if err := SeedFiles(s.Paths); err != nil {
 		return err
 	}
-	if err := installSelf("/usr/local/sbin/vpn-router"); err != nil {
+	if err := installSelf("/usr/local/sbin/router-manager"); err != nil {
 		return err
 	}
-	if _, err := exec.LookPath("vpn-router"); err != nil {
-		if _, statErr := os.Stat("/usr/local/sbin/vpn-router"); statErr != nil {
-			return fmt.Errorf("vpn-router не найден после установки: %w", err)
+	if _, err := exec.LookPath("router-manager"); err != nil {
+		if _, statErr := os.Stat("/usr/local/sbin/router-manager"); statErr != nil {
+			return fmt.Errorf("router-manager не найден после установки: %w", err)
 		}
 	}
-	fmt.Fprintln(s.Stdout, "Готово. Если настройка ещё не выполнена, запустите sudo vpn-router.")
+	fmt.Fprintln(s.Stdout, "Готово. Если настройка ещё не выполнена, запустите sudo router-manager.")
 	return nil
 }
 
@@ -113,8 +113,8 @@ func SeedFiles(paths config.Paths) error {
 			return err
 		}
 	}
-	if _, err := os.Stat(paths.VPNInfraRules); os.IsNotExist(err) {
-		if err := config.WriteSensitiveText(paths.VPNInfraRules, "{\n  \"version\": 3,\n  \"rules\": []\n}\n"); err != nil {
+	if _, err := os.Stat(paths.InfraRules); os.IsNotExist(err) {
+		if err := config.WriteSensitiveText(paths.InfraRules, "{\n  \"version\": 3,\n  \"rules\": []\n}\n"); err != nil {
 			return err
 		}
 	}
@@ -134,7 +134,7 @@ func installSelf(target string) error {
 		return err
 	}
 	defer in.Close()
-	tmp, err := os.CreateTemp(filepath.Dir(target), ".vpn-router-*")
+	tmp, err := os.CreateTemp(filepath.Dir(target), ".router-manager-*")
 	if err != nil {
 		return err
 	}

@@ -14,10 +14,10 @@ import (
 	"strings"
 	"time"
 
-	"vpn-router/internal/config"
-	"vpn-router/internal/shell"
-	"vpn-router/internal/sshclient"
-	"vpn-router/internal/system"
+	"router-manager/internal/config"
+	"router-manager/internal/shell"
+	"router-manager/internal/sshclient"
+	"router-manager/internal/system"
 )
 
 const (
@@ -87,7 +87,7 @@ systemctl restart sing-box`, encoded)
 func (i Installer) EnsureRemoteInstalled(ctx context.Context, ssh sshclient.Client, target sshclient.Target) error {
 	version := i.version(ctx)
 	unit := `[Unit]
-Description=sing-box service for VPN Router Manager
+Description=sing-box service for Router Manager
 After=network-online.target
 Wants=network-online.target
 
@@ -156,7 +156,7 @@ func ApplyRemoteRU(ctx context.Context, ssh sshclient.Client, target sshclient.T
 func WriteRemoteRUState(ctx context.Context, ssh sshclient.Client, target sshclient.Target, mode string, selected string) error {
 	state := fmt.Sprintf("{\"mode\":%q,\"selected_foreign\":%q}\n", mode, selected)
 	encoded := base64.StdEncoding.EncodeToString([]byte(state))
-	command := fmt.Sprintf("install -d -m 700 /etc/ru-vpn && printf %%s %q | base64 -d > /etc/ru-vpn/state.json && chmod 600 /etc/ru-vpn/state.json", encoded)
+	command := fmt.Sprintf("install -d -m 700 /etc/ru-tunnel && printf %%s %q | base64 -d > /etc/ru-tunnel/state.json && chmod 600 /etc/ru-tunnel/state.json", encoded)
 	_, err := ssh.Run(ctx, target, command)
 	return err
 }
@@ -164,7 +164,7 @@ func WriteRemoteRUState(ctx context.Context, ssh sshclient.Client, target sshcli
 func RemoteRealityPrivateKey(ctx context.Context, ssh sshclient.Client, target sshclient.Target) (string, error) {
 	out, err := ssh.Run(ctx, target, "cat /etc/sing-box/config.json")
 	if err != nil {
-		return "", fmt.Errorf("не удалось прочитать /etc/sing-box/config.json на входном VPN-сервере: %w", err)
+		return "", fmt.Errorf("не удалось прочитать /etc/sing-box/config.json на входном сервере: %w", err)
 	}
 	key, err := ExtractRealityPrivateKey([]byte(out))
 	if err != nil {
@@ -263,7 +263,7 @@ func (i Installer) latestVersion(ctx context.Context) (string, error) {
 }
 
 func (i Installer) version(ctx context.Context) string {
-	if version := strings.TrimSpace(os.Getenv("VPN_ROUTER_SING_BOX_VERSION")); version != "" {
+	if version := strings.TrimSpace(os.Getenv("ROUTER_MANAGER_SING_BOX_VERSION")); version != "" {
 		return strings.TrimPrefix(version, "v")
 	}
 	version, err := i.latestVersion(ctx)
@@ -340,7 +340,7 @@ func ensureUnit() error {
 		return nil
 	}
 	unit := `[Unit]
-Description=sing-box service for VPN Router Manager
+Description=sing-box service for Router Manager
 After=network-online.target
 Wants=network-online.target
 

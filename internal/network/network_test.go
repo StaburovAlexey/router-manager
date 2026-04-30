@@ -6,8 +6,8 @@ import (
 	"path/filepath"
 	"testing"
 
-	"vpn-router/internal/config"
-	"vpn-router/internal/shell"
+	"router-manager/internal/config"
+	"router-manager/internal/shell"
 )
 
 func TestDefaultWANInterface(t *testing.T) {
@@ -74,7 +74,7 @@ func TestConfigureLANInterface(t *testing.T) {
 }
 
 func TestEnableIPv4Forwarding(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "sysctl.d", "99-vpn-router.conf")
+	path := filepath.Join(t.TempDir(), "sysctl.d", "99-router-manager.conf")
 	runner := &shell.DryRunner{}
 	if err := EnableIPv4Forwarding(context.Background(), runner, path); err != nil {
 		t.Fatal(err)
