@@ -25,6 +25,7 @@ var AptDependencies = []string{
 	"rfkill",
 	"curl",
 	"openssh-client",
+	"sshpass",
 	"procps",
 	"qrencode",
 	"nano",

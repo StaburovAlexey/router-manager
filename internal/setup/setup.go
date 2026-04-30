@@ -9,6 +9,8 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/charmbracelet/x/term"
+
 	"vpn-router/internal/bootstrap"
 	"vpn-router/internal/config"
 	"vpn-router/internal/confirm"
@@ -64,21 +66,8 @@ func (s Service) Run(ctx context.Context) error {
 	}
 
 	printStep(s.Out, 2, 5, "SSH-доступ к VPN-серверам")
-	fmt.Fprintln(s.Out, "Для управления входным и выходными VPN-серверами нужен SSH-доступ по ключам.")
-	fmt.Fprintln(s.Out, "Важно: настройка запущена через sudo, поэтому приложение проверяет SSH от root-пользователя мини-ПК.")
-	fmt.Fprintln(s.Out, "Обычный `ssh root@SERVER_IP` от пользователя ubuntu не гарантирует, что `sudo ssh ...` тоже работает.")
-	fmt.Fprintln(s.Out, `ssh-keygen -t ed25519 -C "vpn-router"`)
-	fmt.Fprintln(s.Out, `ssh-copy-id -p 22 root@INBOUND_SERVER_IP`)
-	fmt.Fprintln(s.Out, `ssh-copy-id -p 22 root@OUTBOUND_SERVER_IP`)
-	fmt.Fprintln(s.Out, "Проверяйте доступ именно так:")
-	fmt.Fprintln(s.Out, `sudo ssh -o BatchMode=yes -o ConnectTimeout=8 -p 22 root@INBOUND_SERVER_IP "echo ok"`)
-	fmt.Fprintln(s.Out, `sudo ssh -o BatchMode=yes -o ConnectTimeout=8 -p 22 root@OUTBOUND_SERVER_IP "echo ok"`)
-	fmt.Fprintln(s.Out, "Если будет Host key verification failed, добавьте host key в /root/.ssh/known_hosts:")
-	fmt.Fprintln(s.Out, `sudo ssh-keyscan -H -p 22 INBOUND_SERVER_IP | sudo tee -a /root/.ssh/known_hosts >/dev/null`)
-	fmt.Fprintln(s.Out, `sudo ssh-keyscan -H -p 22 OUTBOUND_SERVER_IP | sudo tee -a /root/.ssh/known_hosts >/dev/null`)
-	if !confirm.AskYesNo(reader, s.Out, "SSH-ключи настроены и можно проверить доступ?") {
-		return fmt.Errorf("настройка остановлена: SSH-ключи не подтверждены")
-	}
+	fmt.Fprintln(s.Out, "Приложение может настроить SSH-доступ автоматически.")
+	fmt.Fprintln(s.Out, "Для этого пароль от VPS вводится один раз, не сохраняется и используется только для добавления SSH-ключа.")
 
 	if err := network.HasInternet(ctx, s.Runner); err != nil {
 		return err
@@ -116,7 +105,7 @@ func (s Service) Run(ctx context.Context) error {
 
 	ssh := sshclient.Client{Runner: s.Runner}
 	ruTarget := sshclient.Target{User: cfg.RUServer.SSHUser, IP: cfg.RUServer.IP, Port: cfg.RUServer.SSHPort}
-	if err := waitForSSH(ctx, ssh, ruTarget, "входной VPN-сервер", reader, s.Out); err != nil {
+	if err := ensureSSHAccess(ctx, ssh, ruTarget, "входной VPN-сервер", reader, s.Out); err != nil {
 		return err
 	}
 	if findings := preflight.CollectRemote(ctx, ssh, ruTarget, "входной VPN-сервер"); len(findings) > 0 {
@@ -255,7 +244,7 @@ func configureForeign(ctx context.Context, paths config.Paths, runner shell.Runn
 		foreignServer = existingForeign
 	}
 	foreignTarget := sshclient.Target{User: foreignServer.SSHUser, IP: foreignServer.IP, Port: foreignServer.SSHPort}
-	if err := waitForSSH(ctx, ssh, foreignTarget, "выходной VPN-сервер", reader, out); err != nil {
+	if err := ensureSSHAccess(ctx, ssh, foreignTarget, "выходной VPN-сервер", reader, out); err != nil {
 		return foreignServer, err
 	}
 	if findings := preflight.CollectRemote(ctx, ssh, foreignTarget, "выходной VPN-сервер"); len(findings) > 0 && foreignAction != "use" {
@@ -334,6 +323,57 @@ func waitForSSH(ctx context.Context, ssh sshclient.Client, target sshclient.Targ
 		}
 		return fmt.Errorf("настройка остановлена: SSH-доступ к %s не настроен", label)
 	}
+}
+
+func ensureSSHAccess(ctx context.Context, ssh sshclient.Client, target sshclient.Target, label string, reader *bufio.Reader, out io.Writer) error {
+	if err := ssh.Check(ctx, target); err == nil {
+		fmt.Fprintf(out, "SSH-доступ к %s уже настроен.\n", label)
+		return nil
+	}
+	fmt.Fprintf(out, "\nSSH-ключ для %s пока не работает.\n", label)
+	fmt.Fprintln(out, "Можно настроить его автоматически через пароль от VPS. Пароль не сохраняется.")
+	if !confirm.AskYesNo(reader, out, "Настроить SSH-доступ автоматически?") {
+		printManualSSHInstructions(out, target)
+		return waitForSSH(ctx, ssh, target, label, reader, out)
+	}
+	hostKey, err := sshclient.ScanHostKey(ctx, target)
+	if err != nil {
+		return fmt.Errorf("не удалось получить host key %s: %w", label, err)
+	}
+	fmt.Fprintf(out, "\nFingerprint %s:\n%s\n\n", label, sshclient.HostKeyFingerprint(ctx, hostKey))
+	if !confirm.AskYesNo(reader, out, "Подтвердить host key сервера?") {
+		return fmt.Errorf("настройка остановлена: host key %s не подтверждён", label)
+	}
+	if err := sshclient.TrustHostKey(hostKey); err != nil {
+		return fmt.Errorf("не удалось сохранить host key %s: %w", label, err)
+	}
+	publicKey, err := sshclient.EnsureRootKeyPair(ctx)
+	if err != nil {
+		return fmt.Errorf("не удалось подготовить SSH-ключ root-пользователя мини-ПК: %w", err)
+	}
+	password := askSecret(reader, out, "SSH-пароль "+label)
+	if strings.TrimSpace(password) == "" {
+		return fmt.Errorf("настройка остановлена: SSH-пароль не введён")
+	}
+	if err := sshclient.InstallPublicKeyWithPassword(ctx, target, password, publicKey); err != nil {
+		fmt.Fprintf(out, "\nАвтоматическая настройка SSH-ключа не удалась.\n%v\n\n", err)
+		printManualSSHInstructions(out, target)
+		return waitForSSH(ctx, ssh, target, label, reader, out)
+	}
+	return waitForSSH(ctx, ssh, target, label, reader, out)
+}
+
+func printManualSSHInstructions(out io.Writer, target sshclient.Target) {
+	if target.Port == 0 {
+		target.Port = 22
+	}
+	fmt.Fprintln(out)
+	fmt.Fprintln(out, "Ручной способ, если парольный SSH на VPS отключён:")
+	fmt.Fprintln(out, "  sudo mkdir -p /root/.ssh")
+	fmt.Fprintln(out, `  sudo ssh-keygen -t ed25519 -C "vpn-router" -f /root/.ssh/id_ed25519`)
+	fmt.Fprintf(out, "  sudo ssh-keyscan -H -p %d %s | sudo tee -a /root/.ssh/known_hosts >/dev/null\n", target.Port, target.IP)
+	fmt.Fprintf(out, "  sudo ssh-copy-id -i /root/.ssh/id_ed25519.pub -p %d %s\n", target.Port, target.Addr())
+	fmt.Fprintln(out)
 }
 
 func resolveForeignConflict(paths config.Paths, server *config.ForeignServer, reader *bufio.Reader, out io.Writer) (string, config.ForeignServer, error) {
@@ -489,6 +529,18 @@ func ask(reader *bufio.Reader, out io.Writer, label, def string) string {
 		return def
 	}
 	return text
+}
+
+func askSecret(reader *bufio.Reader, out io.Writer, label string) string {
+	if term.IsTerminal(os.Stdin.Fd()) {
+		fmt.Fprintf(out, "%s: ", label)
+		data, err := term.ReadPassword(os.Stdin.Fd())
+		fmt.Fprintln(out)
+		if err == nil {
+			return strings.TrimSpace(string(data))
+		}
+	}
+	return ask(reader, out, label, "")
 }
 
 func chooseWANInterface(ctx context.Context, runner shell.Runner, reader *bufio.Reader, out io.Writer, current string) string {

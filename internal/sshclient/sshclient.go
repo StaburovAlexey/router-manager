@@ -2,7 +2,12 @@ package sshclient
 
 import (
 	"context"
+	"encoding/base64"
 	"fmt"
+	"io"
+	"os"
+	"os/exec"
+	"path/filepath"
 	"strconv"
 	"strings"
 
@@ -65,6 +70,116 @@ func (c Client) RunInteractive(ctx context.Context, target Target, command strin
 		command,
 	); err != nil {
 		return ExplainError(target, err)
+	}
+	return nil
+}
+
+func EnsureRootKeyPair(ctx context.Context) (string, error) {
+	dir := "/root/.ssh"
+	privateKey := filepath.Join(dir, "id_ed25519")
+	publicKey := privateKey + ".pub"
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		return "", fmt.Errorf("не удалось создать %s: %w", dir, err)
+	}
+	if _, err := os.Stat(privateKey); os.IsNotExist(err) {
+		cmd := exec.CommandContext(ctx, "ssh-keygen", "-t", "ed25519", "-C", "vpn-router", "-f", privateKey, "-N", "")
+		if out, err := cmd.CombinedOutput(); err != nil {
+			return "", fmt.Errorf("ssh-keygen: %w: %s", err, strings.TrimSpace(string(out)))
+		}
+	} else if err != nil {
+		return "", err
+	}
+	if _, err := os.Stat(publicKey); os.IsNotExist(err) {
+		cmd := exec.CommandContext(ctx, "ssh-keygen", "-y", "-f", privateKey)
+		out, err := cmd.Output()
+		if err != nil {
+			return "", fmt.Errorf("не удалось восстановить public key из %s: %w", privateKey, err)
+		}
+		if err := os.WriteFile(publicKey, out, 0o644); err != nil {
+			return "", err
+		}
+	} else if err != nil {
+		return "", err
+	}
+	_ = os.Chmod(dir, 0o700)
+	_ = os.Chmod(privateKey, 0o600)
+	_ = os.Chmod(publicKey, 0o644)
+	data, err := os.ReadFile(publicKey)
+	if err != nil {
+		return "", err
+	}
+	return strings.TrimSpace(string(data)), nil
+}
+
+func ScanHostKey(ctx context.Context, target Target) (string, error) {
+	cmd := exec.CommandContext(ctx, "ssh-keyscan", "-H", "-p", strconv.Itoa(port(target)), target.IP)
+	out, err := cmd.Output()
+	if err != nil {
+		return "", fmt.Errorf("ssh-keyscan -p %d %s: %w", port(target), target.IP, err)
+	}
+	text := strings.TrimSpace(string(out))
+	if text == "" {
+		return "", fmt.Errorf("ssh-keyscan не вернул host key для %s:%d", target.IP, port(target))
+	}
+	return text, nil
+}
+
+func HostKeyFingerprint(ctx context.Context, hostKey string) string {
+	cmd := exec.CommandContext(ctx, "ssh-keygen", "-lf", "-")
+	cmd.Stdin = strings.NewReader(hostKey)
+	out, err := cmd.Output()
+	if err != nil {
+		return strings.TrimSpace(hostKey)
+	}
+	return strings.TrimSpace(string(out))
+}
+
+func TrustHostKey(hostKey string) error {
+	dir := "/root/.ssh"
+	path := filepath.Join(dir, "known_hosts")
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		return err
+	}
+	existing, _ := os.ReadFile(path)
+	if strings.Contains(string(existing), strings.TrimSpace(hostKey)) {
+		return nil
+	}
+	file, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o600)
+	if err != nil {
+		return err
+	}
+	defer file.Close()
+	if _, err := io.WriteString(file, strings.TrimSpace(hostKey)+"\n"); err != nil {
+		return err
+	}
+	_ = os.Chmod(dir, 0o700)
+	return os.Chmod(path, 0o600)
+}
+
+func InstallPublicKeyWithPassword(ctx context.Context, target Target, password string, publicKey string) error {
+	if strings.TrimSpace(password) == "" {
+		return fmt.Errorf("SSH-пароль пустой")
+	}
+	if _, err := exec.LookPath("sshpass"); err != nil {
+		return fmt.Errorf("sshpass не найден. Установите зависимость: sudo apt install sshpass")
+	}
+	encodedKey := base64.StdEncoding.EncodeToString([]byte(strings.TrimSpace(publicKey)))
+	remoteCommand := fmt.Sprintf(`umask 077; mkdir -p ~/.ssh; touch ~/.ssh/authorized_keys; key="$(printf %%s %q | base64 -d)"; grep -qxF "$key" ~/.ssh/authorized_keys || printf '%%s\n' "$key" >> ~/.ssh/authorized_keys; chmod 700 ~/.ssh; chmod 600 ~/.ssh/authorized_keys`, encodedKey)
+	cmd := exec.CommandContext(ctx,
+		"sshpass", "-e",
+		"ssh",
+		"-o", "PreferredAuthentications=password",
+		"-o", "PubkeyAuthentication=no",
+		"-o", "StrictHostKeyChecking=yes",
+		"-o", "ConnectTimeout=8",
+		"-p", strconv.Itoa(port(target)),
+		target.Addr(),
+		remoteCommand,
+	)
+	cmd.Env = append(os.Environ(), "SSHPASS="+password)
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("не удалось добавить SSH-ключ на сервер %s: %w: %s", target.Addr(), err, strings.TrimSpace(string(out)))
 	}
 	return nil
 }
