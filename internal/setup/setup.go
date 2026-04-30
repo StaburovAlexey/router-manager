@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"os/exec"
 	"strconv"
 	"strings"
 
@@ -53,7 +54,11 @@ func (s Service) Run(ctx context.Context) error {
 		return err
 	}
 
+	printSetupIntro(s.Out, cfg)
 	printStep(s.Out, 1, 5, "Проверка устройства")
+	if err := printReadiness(ctx, s.Runner, s.Out); err != nil {
+		return err
+	}
 	findings := preflight.Collect(ctx, s.Runner, s.Paths)
 	if len(findings) > 0 {
 		fmt.Fprintln(s.Out, preflight.Format(findings))
@@ -69,9 +74,6 @@ func (s Service) Run(ctx context.Context) error {
 	fmt.Fprintln(s.Out, "Приложение может настроить SSH-доступ автоматически.")
 	fmt.Fprintln(s.Out, "Для этого пароль от VPS вводится один раз, не сохраняется и используется только для добавления SSH-ключа.")
 
-	if err := network.HasInternet(ctx, s.Runner); err != nil {
-		return err
-	}
 	currentWAN := describeAutoWAN(ctx, s.Runner, s.Out)
 	cfg.MiniPC.WANInterface = "auto"
 
@@ -197,6 +199,55 @@ func (s Service) Run(ctx context.Context) error {
 
 func printStep(out io.Writer, current int, total int, title string) {
 	fmt.Fprintf(out, "\nШаг %d из %d: %s\n\n", current, total, title)
+}
+
+func printSetupIntro(out io.Writer, cfg config.Config) {
+	fmt.Fprintln(out)
+	if cfg.MiniPC.APInterface != "" || cfg.RUServer.IP != "" || cfg.Reality.UUID != "" {
+		fmt.Fprintln(out, "Продолжаю настройку. Уже сохранённые значения будут предложены по умолчанию.")
+	} else {
+		fmt.Fprintln(out, "Мастер настройки подготовит мини-ПК как Wi-Fi VPN-роутер.")
+	}
+	fmt.Fprintln(out)
+	fmt.Fprintln(out, "Перед началом проверьте:")
+	fmt.Fprintln(out, "- мини-ПК подключён к интернету кабелем или отдельным адаптером")
+	fmt.Fprintln(out, "- есть Wi-Fi адаптер для раздачи сети")
+	fmt.Fprintln(out, "- подготовлены IP, SSH-пользователь и пароль или ключи для VPS")
+	fmt.Fprintln(out, "- во время настройки Wi-Fi подключение к мини-ПК может временно пропасть")
+	fmt.Fprintln(out)
+}
+
+func printReadiness(ctx context.Context, runner shell.Runner, out io.Writer) error {
+	fmt.Fprintln(out, "Проверка готовности:")
+	missing := missingCommands("ip", "iw", "nft", "systemctl", "ssh", "qrencode")
+	if len(missing) == 0 {
+		fmt.Fprintln(out, "- системные команды: OK")
+	} else {
+		return fmt.Errorf("не найдены системные команды: %s. Запустите sudo vpn-router, чтобы выполнить подготовку системы", strings.Join(missing, ", "))
+	}
+	if err := network.HasInternet(ctx, runner); err != nil {
+		fmt.Fprintln(out, "- интернет на мини-ПК: ошибка")
+		return fmt.Errorf("на мини-ПК нет внешнего интернета: %w", err)
+	}
+	fmt.Fprintln(out, "- интернет на мини-ПК: OK")
+	if infos, err := wifi.InterfaceInfos(ctx, runner); err != nil {
+		fmt.Fprintf(out, "- Wi-Fi адаптеры: не удалось проверить (%v)\n", err)
+	} else if len(infos) == 0 {
+		fmt.Fprintln(out, "- Wi-Fi адаптеры: не найдены")
+	} else {
+		fmt.Fprintln(out, "- Wi-Fi адаптеры: найдены, выбор будет на следующем шаге")
+	}
+	return nil
+}
+
+func missingCommands(names ...string) []string {
+	var missing []string
+	for _, name := range names {
+		if _, err := exec.LookPath(name); err != nil {
+			missing = append(missing, name)
+		}
+	}
+	return missing
 }
 
 func ensureRealityRuntime(ctx context.Context, cfg *config.Config) error {

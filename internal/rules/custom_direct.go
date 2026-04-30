@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"net/url"
 	"os"
 	"os/exec"
 	"regexp"
@@ -104,6 +105,28 @@ func Add(path string, kind string, value string) (string, error) {
 	return normalized, Save(path, set)
 }
 
+func AddAuto(path string, value string) (string, string, error) {
+	value = strings.TrimSpace(strings.ToLower(value))
+	if value == "" {
+		return "", "", fmt.Errorf("значение не может быть пустым")
+	}
+	if _, cidr, err := net.ParseCIDR(value); err == nil {
+		normalized, err := Add(path, "cidr", cidr.String())
+		return "cidr", normalized, err
+	}
+	if ip := net.ParseIP(value); ip != nil {
+		normalized, err := Add(path, "ip", ip.String())
+		return "ip", normalized, err
+	}
+	host := hostFromUserInput(value)
+	if ip := net.ParseIP(host); ip != nil {
+		normalized, err := Add(path, "ip", ip.String())
+		return "ip", normalized, err
+	}
+	normalized, err := Add(path, "suffix", host)
+	return "site", normalized, err
+}
+
 func Remove(path string, value string) (bool, error) {
 	set, err := Load(path)
 	if err != nil {
@@ -111,6 +134,13 @@ func Remove(path string, value string) (bool, error) {
 	}
 	value = strings.TrimSpace(strings.ToLower(value))
 	candidates := removeCandidates(value)
+	if _, _, err := net.ParseCIDR(value); err != nil {
+		if host := hostFromUserInput(value); host != "" && host != value {
+			for candidate := range removeCandidates(host) {
+				candidates[candidate] = true
+			}
+		}
+	}
 	removed := false
 	for i := range set.Rules {
 		set.Rules[i].DomainSuffix, removed = removeString(set.Rules[i].DomainSuffix, candidates, removed)
@@ -156,6 +186,29 @@ func AfterChange(ctx context.Context, runner shell.Runner, paths config.Paths) e
 		return singbox.Restart(ctx, runner)
 	}
 	return nil
+}
+
+func FormatHuman(set RuleSet) string {
+	set = normalize(set)
+	var b strings.Builder
+	fmt.Fprintln(&b, "Сайты и адреса без VPN:")
+	hasRules := false
+	for _, value := range set.Rules[0].DomainSuffix {
+		hasRules = true
+		fmt.Fprintf(&b, "- %s и его поддомены\n", value)
+	}
+	for _, value := range set.Rules[1].Domain {
+		hasRules = true
+		fmt.Fprintf(&b, "- только %s\n", value)
+	}
+	for _, value := range set.Rules[2].IPCIDR {
+		hasRules = true
+		fmt.Fprintf(&b, "- %s\n", value)
+	}
+	if !hasRules {
+		fmt.Fprintln(&b, "  пока ничего не добавлено")
+	}
+	return strings.TrimRight(b.String(), "\n")
 }
 
 func normalize(set RuleSet) RuleSet {
@@ -227,6 +280,22 @@ func normalizeValue(kind string, value string) (string, error) {
 	default:
 		return "", fmt.Errorf("неизвестный тип правила: %s", kind)
 	}
+}
+
+func hostFromUserInput(value string) string {
+	value = strings.TrimSpace(strings.ToLower(value))
+	if parsed, err := url.Parse(value); err == nil && parsed.Host != "" {
+		value = parsed.Host
+	}
+	if before, _, ok := strings.Cut(value, "/"); ok {
+		value = before
+	}
+	if host, _, err := net.SplitHostPort(value); err == nil {
+		value = host
+	}
+	value = strings.TrimPrefix(value, "*.")
+	value = strings.TrimPrefix(value, ".")
+	return strings.TrimSpace(value)
 }
 
 func appendIfMissing(values []string, value string) []string {

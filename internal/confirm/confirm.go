@@ -7,23 +7,37 @@ import (
 	"strings"
 )
 
-const RequiredMessage = "Нужно обязательно ввести yes или no."
+const RequiredMessage = "Введите да/нет или yes/no."
+
+func ParseYesNo(text string) (bool, bool) {
+	switch strings.ToLower(strings.TrimSpace(text)) {
+	case "да", "д", "yes", "y":
+		return true, true
+	case "нет", "н", "no", "n":
+		return false, true
+	default:
+		return false, false
+	}
+}
 
 func AskYesNo(reader *bufio.Reader, out io.Writer, label string) bool {
 	for {
-		fmt.Fprintf(out, "%s (yes/no): ", label)
+		fmt.Fprintf(out, "%s (да/нет): ", label)
 		text, err := reader.ReadString('\n')
-		answer := strings.ToLower(strings.TrimSpace(text))
-		switch answer {
-		case "yes":
-			return true
-		case "no":
-			return false
-		default:
-			fmt.Fprintln(out, RequiredMessage)
-			if err != nil && strings.TrimSpace(text) == "" {
-				return false
-			}
+		if answer, ok := ParseYesNo(text); ok {
+			return answer
 		}
+		if strings.TrimSpace(text) == "" && err != nil {
+			return false
+		}
+		if strings.TrimSpace(text) == "" {
+			fmt.Fprintln(out, RequiredMessage)
+			continue
+		}
+		if err == nil {
+			fmt.Fprintln(out, RequiredMessage)
+			continue
+		}
+		return false
 	}
 }

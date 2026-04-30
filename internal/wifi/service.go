@@ -38,6 +38,12 @@ type DnsmasqTemplateData struct {
 	Gateway     string
 }
 
+type SwitchResult struct {
+	OldInterface   string
+	NewInterface   string
+	Recommendation Recommendation
+}
+
 func RenderHostapd(cfg config.Config) ([]byte, error) {
 	width := 0
 	if cfg.WiFi.ChannelWidth >= 80 {
@@ -128,6 +134,59 @@ func Restart(ctx context.Context, runner shell.Runner, paths config.Paths) error
 	return system.RestartAndCheck(ctx, runner, "dnsmasq")
 }
 
+func SwitchAccessPoint(ctx context.Context, runner shell.Runner, paths config.Paths, iface string) (SwitchResult, error) {
+	iface = strings.TrimSpace(iface)
+	if iface == "" {
+		return SwitchResult{}, fmt.Errorf("Wi-Fi адаптер для раздачи не выбран")
+	}
+	cfg, err := config.Load(paths)
+	if err != nil {
+		return SwitchResult{}, err
+	}
+	oldCfg := cfg
+	caps, rec, err := RecommendedSettings(ctx, runner, iface)
+	if err != nil {
+		return SwitchResult{}, err
+	}
+	if err := ValidateSettings(rec.Band, rec.Channel, rec.ChannelWidth, caps); err != nil {
+		return SwitchResult{}, err
+	}
+	cfg.MiniPC.APInterface = iface
+	ApplyRecommendation(&cfg, rec)
+	if err := config.Save(paths, cfg); err != nil {
+		return SwitchResult{}, err
+	}
+	if err := ApplyAccessPoint(ctx, runner, paths, cfg); err != nil {
+		_ = config.Save(paths, oldCfg)
+		if strings.TrimSpace(oldCfg.MiniPC.APInterface) != "" {
+			if restoreErr := ApplyAccessPoint(ctx, runner, paths, oldCfg); restoreErr != nil {
+				return SwitchResult{}, fmt.Errorf("новый Wi-Fi адаптер %s не запустился: %w; откат на старый адаптер %s тоже не удался: %v", iface, err, oldCfg.MiniPC.APInterface, restoreErr)
+			}
+		}
+		return SwitchResult{}, fmt.Errorf("новый Wi-Fi адаптер %s не запустился, настройки возвращены на %s: %w", iface, oldCfg.MiniPC.APInterface, err)
+	}
+	if oldCfg.MiniPC.APInterface != "" && oldCfg.MiniPC.APInterface != iface {
+		ReleaseRadio(ctx, runner, oldCfg.MiniPC.APInterface)
+	}
+	return SwitchResult{OldInterface: oldCfg.MiniPC.APInterface, NewInterface: iface, Recommendation: rec}, nil
+}
+
+func RecommendedSettings(ctx context.Context, runner shell.Runner, iface string) (Capabilities, Recommendation, error) {
+	caps, err := InspectInterface(ctx, runner, iface)
+	if err != nil {
+		return Capabilities{}, Recommendation{}, err
+	}
+	networks, _ := Scan(ctx, runner, iface)
+	rec := Recommend(caps, networks)
+	return caps, rec, nil
+}
+
+func ApplyRecommendation(cfg *config.Config, rec Recommendation) {
+	_ = ConfigureBand(cfg, rec.Band)
+	cfg.WiFi.Channel = rec.Channel
+	cfg.WiFi.ChannelWidth = rec.ChannelWidth
+}
+
 func PrepareRadio(ctx context.Context, runner shell.Runner, iface string) error {
 	if err := runner.Run(ctx, "rfkill", "unblock", "wifi"); err != nil {
 		return fmt.Errorf("Wi-Fi заблокирован rfkill, и снять блокировку автоматически не удалось: %w", err)
@@ -138,6 +197,16 @@ func PrepareRadio(ctx context.Context, runner shell.Runner, iface string) error 
 		_ = runner.Run(ctx, "ip", "link", "set", iface, "up")
 	}
 	return nil
+}
+
+func ReleaseRadio(ctx context.Context, runner shell.Runner, iface string) {
+	if strings.TrimSpace(iface) == "" {
+		return
+	}
+	_ = runner.Run(ctx, "ip", "addr", "flush", "dev", iface)
+	_ = runner.Run(ctx, "ip", "link", "set", iface, "down")
+	_ = runner.Run(ctx, "nmcli", "device", "set", iface, "managed", "yes")
+	_ = runner.Run(ctx, "ip", "link", "set", iface, "up")
 }
 
 func Scan(ctx context.Context, runner shell.Runner, iface string) ([]Network, error) {

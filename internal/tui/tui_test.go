@@ -45,19 +45,39 @@ func TestTUIQuitReturnsCommand(t *testing.T) {
 	}
 }
 
+func TestTUINumberSelectsMenuItem(t *testing.T) {
+	m := testModel()
+	next := m.updateMenu(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("1")})
+	if next.menu != "internet" {
+		t.Fatalf("menu = %q", next.menu)
+	}
+}
+
+func TestTUIZeroGoesBackOrQuits(t *testing.T) {
+	m := testModel().setMenu("wifi")
+	next := m.updateMenu(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("0")})
+	if next.menu != "main" {
+		t.Fatalf("menu = %q", next.menu)
+	}
+	next = next.updateMenu(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("0")})
+	if next.menu != "quit" {
+		t.Fatalf("menu = %q", next.menu)
+	}
+}
+
 func TestTUIConfirmRequiresExplicitYesOrNo(t *testing.T) {
 	m := testModel().startConfirm("Проверка", "Опасное действие.", "foreign-remove", "de-1", nil)
 	m = m.updateConfirm(tea.KeyMsg{Type: tea.KeyEnter})
 	if m.mode != modeConfirm {
 		t.Fatalf("empty enter must keep confirm mode, got %q", m.mode)
 	}
-	if !strings.Contains(m.message, "yes или no") {
+	if !strings.Contains(m.message, "да/нет") {
 		t.Fatalf("unexpected message: %q", m.message)
 	}
 }
 
-func TestTUIConfirmNoCancels(t *testing.T) {
-	m := typeConfirmInput(testModel().startConfirm("Проверка", "Опасное действие.", "foreign-remove", "de-1", nil), "no")
+func TestTUIConfirmNoCancelsInRussian(t *testing.T) {
+	m := typeConfirmInput(testModel().startConfirm("Проверка", "Опасное действие.", "foreign-remove", "de-1", nil), "нет")
 	m = m.updateConfirm(tea.KeyMsg{Type: tea.KeyEnter})
 	if m.mode != modeMenu {
 		t.Fatalf("mode = %q", m.mode)
@@ -67,12 +87,12 @@ func TestTUIConfirmNoCancels(t *testing.T) {
 	}
 }
 
-func TestTUIConfirmYesRunsAction(t *testing.T) {
+func TestTUIConfirmYesRunsActionInRussian(t *testing.T) {
 	paths := config.NewPaths(t.TempDir())
 	if err := config.SaveForeign(paths, config.ForeignServers{Servers: []config.ForeignServer{{Name: "de-1"}}}); err != nil {
 		t.Fatal(err)
 	}
-	m := typeConfirmInput(testModelWithPaths(paths).startConfirm("Удалить", "Удалить сервер.", "foreign-remove", "de-1", nil), "yes")
+	m := typeConfirmInput(testModelWithPaths(paths).startConfirm("Удалить", "Удалить сервер.", "foreign-remove", "de-1", nil), "да")
 	m = m.updateConfirm(tea.KeyMsg{Type: tea.KeyEnter})
 	if m.mode != modeMenu {
 		t.Fatalf("mode = %q", m.mode)

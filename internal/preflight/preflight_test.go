@@ -35,7 +35,7 @@ func TestCollectFindsManagedFilesAndRuntimeConflicts(t *testing.T) {
 	}}
 	findings := Collect(context.Background(), runner, paths)
 	text := Format(findings)
-	for _, want := range []string{"Локальный sing-box config", "hostapd config", "TUN interface tun0", "nftables table inet vpn_router", "Служба sing-box уже active", "yes"} {
+	for _, want := range []string{"Локальный sing-box config", "hostapd config", "TUN interface tun0", "nftables table inet vpn_router", "Служба sing-box уже active", "да"} {
 		if !strings.Contains(text, want) {
 			t.Fatalf("preflight output does not contain %q:\n%s", want, text)
 		}

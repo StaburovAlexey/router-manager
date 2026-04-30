@@ -97,6 +97,30 @@ func Format(status Status) string {
 	return b.String()
 }
 
+func Report(ctx context.Context, runner shell.Runner, paths config.Paths) (string, error) {
+	status, err := Collect(ctx, runner, paths)
+	if err != nil {
+		return "", err
+	}
+	var b strings.Builder
+	fmt.Fprintln(&b, "Отчёт диагностики vpn-router")
+	fmt.Fprintln(&b, "Секреты, ключи и содержимое конфигов не выводятся.")
+	fmt.Fprintln(&b)
+	fmt.Fprint(&b, Format(status))
+	fmt.Fprintln(&b)
+	fmt.Fprintln(&b, "Куда идти дальше:")
+	for _, item := range nextActions(status) {
+		fmt.Fprintf(&b, "- %s\n", item)
+	}
+	fmt.Fprintln(&b)
+	fmt.Fprintln(&b, "Полезные пункты меню:")
+	fmt.Fprintln(&b, "- Интернет -> Проверить состояние интернета")
+	fmt.Fprintln(&b, "- Проблемы и диагностика -> Показать логи")
+	fmt.Fprintln(&b, "- Проблемы и диагностика -> Перезапустить Wi-Fi")
+	fmt.Fprintln(&b, "- Проблемы и диагностика -> Откатить локальную сеть")
+	return b.String(), nil
+}
+
 func internetSummary(status Status) string {
 	if status.PublicIP != "" && status.PublicIP != "не удалось определить" {
 		return "OK (" + status.PublicIP + ")"
@@ -151,6 +175,31 @@ func recommendations(status Status) []string {
 	}
 	if status.DNS != "ok" {
 		result = append(result, "DNS не отвечает; перезапустите VPN-режим или проверьте логи sing-box")
+	}
+	return result
+}
+
+func nextActions(status Status) []string {
+	recs := recommendations(status)
+	if len(recs) == 0 {
+		return []string{"если телефон или ноутбук не подключается, проверьте пароль Wi-Fi и откройте QR-код клиента"}
+	}
+	result := make([]string, 0, len(recs))
+	for _, rec := range recs {
+		switch {
+		case strings.Contains(rec, "Wi-Fi заблокирован"):
+			result = append(result, "перезапустите Wi-Fi в меню или выполните: rfkill unblock wifi")
+		case strings.Contains(rec, "Wi-Fi точка доступа"):
+			result = append(result, "откройте Wi-Fi -> Перезапустить Wi-Fi; если ошибка повторится, откройте логи")
+		case strings.Contains(rec, "DHCP/DNS"):
+			result = append(result, "откройте Проблемы и диагностика -> Показать логи и проверьте dnsmasq")
+		case strings.Contains(rec, "sing-box"):
+			result = append(result, "откройте Проблемы и диагностика -> Показать логи; затем попробуйте Интернет -> Включить VPN")
+		case strings.Contains(rec, "DNS"):
+			result = append(result, "попробуйте Интернет -> Выключить VPN, затем Интернет -> Включить VPN")
+		default:
+			result = append(result, rec)
+		}
 	}
 	return result
 }

@@ -29,6 +29,7 @@ import (
 	"vpn-router/internal/summary"
 	"vpn-router/internal/system"
 	"vpn-router/internal/tui"
+	"vpn-router/internal/uninstall"
 	"vpn-router/internal/wifi"
 )
 
@@ -51,7 +52,11 @@ func NewRoot(opts Options) *cobra.Command {
 		SilenceErrors: true,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if shouldRunInitialSetup(opts.Paths) {
-				fmt.Fprintln(cmd.OutOrStdout(), "Первый запуск: запускаю подготовку системы и настройку.")
+				if _, err := os.Stat(opts.Paths.Config); errors.Is(err, os.ErrNotExist) {
+					fmt.Fprintln(cmd.OutOrStdout(), "Первый запуск: подготовлю систему и открою мастер настройки.")
+				} else {
+					fmt.Fprintln(cmd.OutOrStdout(), "Настройка ещё не завершена: продолжу мастер с уже сохранёнными значениями.")
+				}
 				if err := (bootstrap.Service{Paths: opts.Paths, Runner: opts.Runner, Stdout: cmd.OutOrStdout()}).Run(ctx); err != nil {
 					return err
 				}
@@ -67,11 +72,13 @@ func NewRoot(opts Options) *cobra.Command {
 		vpnCmd(ctx, opts),
 		directCmd(ctx, opts),
 		statusCmd(ctx, opts),
+		reportCmd(ctx, opts),
 		logsCmd(ctx, opts),
 		infoCmd(opts),
 		qrCmd(ctx, opts),
 		updateCmd(ctx, opts),
 		restoreNetworkCmd(ctx, opts),
+		uninstallCmd(ctx, opts),
 	}
 	commands = append(commands, directRulesCommands(ctx, opts)...)
 	root.AddCommand(commands...)
@@ -117,6 +124,38 @@ func restoreNetworkCmd(ctx context.Context, opts Options) *cobra.Command {
 			return (restore.Service{Paths: opts.Paths, Runner: opts.Runner, Out: cmd.OutOrStdout()}).Run(ctx)
 		},
 	}
+}
+
+func uninstallCmd(ctx context.Context, opts Options) *cobra.Command {
+	var yes bool
+	var keepDeps bool
+	cmd := &cobra.Command{
+		Use:   "uninstall",
+		Short: "Полностью удалить vpn-router с устройства",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			if err := system.RequireRoot(); err != nil {
+				return err
+			}
+			if !yes {
+				reader := bufio.NewReader(os.Stdin)
+				fmt.Fprintln(cmd.OutOrStdout(), "Будут удалены локальные настройки, данные, бинарник vpn-router и прикладные зависимости.")
+				fmt.Fprintln(cmd.OutOrStdout(), "Удалённые VPN-серверы не изменяются.")
+				if !confirm.AskYesNo(reader, cmd.OutOrStdout(), "Полностью удалить vpn-router с этого устройства?") {
+					fmt.Fprintln(cmd.OutOrStdout(), "Операция отменена.")
+					return nil
+				}
+			}
+			return (uninstall.Service{
+				Paths:              opts.Paths,
+				Runner:             opts.Runner,
+				Out:                cmd.OutOrStdout(),
+				RemoveDependencies: !keepDeps,
+			}).Run(ctx)
+		},
+	}
+	cmd.Flags().BoolVar(&yes, "yes", false, "не спрашивать подтверждение")
+	cmd.Flags().BoolVar(&keepDeps, "keep-deps", false, "не удалять зависимости")
+	return cmd
 }
 
 func bootstrapCmd(ctx context.Context, opts Options) *cobra.Command {
@@ -184,6 +223,21 @@ func statusCmd(ctx context.Context, opts Options) *cobra.Command {
 	}
 }
 
+func reportCmd(ctx context.Context, opts Options) *cobra.Command {
+	return &cobra.Command{
+		Use:   "report",
+		Short: "Собрать отчёт диагностики без секретов",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			report, err := diagnostics.Report(ctx, opts.Runner, opts.Paths)
+			if err != nil {
+				return err
+			}
+			fmt.Fprint(cmd.OutOrStdout(), report)
+			return nil
+		},
+	}
+}
+
 func logsCmd(ctx context.Context, opts Options) *cobra.Command {
 	return &cobra.Command{
 		Use:   "logs",
@@ -235,8 +289,8 @@ func qrCmd(ctx context.Context, opts Options) *cobra.Command {
 
 func directRulesCommands(ctx context.Context, opts Options) []*cobra.Command {
 	add := &cobra.Command{
-		Use:   "direct-add <domain|suffix|ip|cidr> <value>",
-		Short: "Добавить правило прямого доступа без VPN",
+		Use:   "direct-add <site|domain|suffix|ip|cidr> <value>",
+		Short: "Добавить сайт или адрес прямого доступа без VPN",
 		Args:  cobra.ExactArgs(2),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if err := system.RequireRoot(); err != nil {
@@ -245,7 +299,14 @@ func directRulesCommands(ctx context.Context, opts Options) []*cobra.Command {
 			if _, err := system.BackupFile(opts.Paths.CustomDirect, opts.Paths.BackupsDir); err != nil {
 				return err
 			}
-			value, err := rules.Add(opts.Paths.CustomDirect, args[0], args[1])
+			value := ""
+			var err error
+			switch args[0] {
+			case "site", "auto":
+				_, value, err = rules.AddAuto(opts.Paths.CustomDirect, args[1])
+			default:
+				value, err = rules.Add(opts.Paths.CustomDirect, args[0], args[1])
+			}
 			if err != nil {
 				return err
 			}
@@ -283,17 +344,23 @@ func directRulesCommands(ctx context.Context, opts Options) []*cobra.Command {
 	}
 	list := &cobra.Command{
 		Use:   "direct-list",
-		Short: "Показать правила прямого доступа",
+		Short: "Показать сайты и адреса прямого доступа",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			set, err := rules.Load(opts.Paths.CustomDirect)
 			if err != nil {
 				return err
+			}
+			asJSON, _ := cmd.Flags().GetBool("json")
+			if !asJSON {
+				fmt.Fprintln(cmd.OutOrStdout(), rules.FormatHuman(set))
+				return nil
 			}
 			data, _ := json.MarshalIndent(set, "", "  ")
 			fmt.Fprintln(cmd.OutOrStdout(), string(data))
 			return nil
 		},
 	}
+	list.Flags().Bool("json", false, "показать исходный JSON rule-set")
 	edit := &cobra.Command{
 		Use:   "direct-edit",
 		Short: "Открыть custom-direct.json в редакторе",
@@ -512,6 +579,8 @@ func wifiCmd(ctx context.Context, opts Options) *cobra.Command {
 	cmd.AddCommand(wifiSetBandCmd(ctx, opts))
 	cmd.AddCommand(wifiSetChannelCmd(ctx, opts))
 	cmd.AddCommand(wifiSetWidthCmd(ctx, opts))
+	cmd.AddCommand(wifiAdaptersCmd(ctx, opts))
+	cmd.AddCommand(wifiSetAdapterCmd(ctx, opts))
 	cmd.AddCommand(&cobra.Command{
 		Use:   "auto-channel",
 		Short: "Автоподбор лучшего Wi-Fi канала",
@@ -565,6 +634,61 @@ func wifiCmd(ctx context.Context, opts Options) *cobra.Command {
 		},
 	})
 	return cmd
+}
+
+func wifiAdaptersCmd(ctx context.Context, opts Options) *cobra.Command {
+	return &cobra.Command{
+		Use:   "adapters",
+		Short: "Показать Wi-Fi адаптеры для раздачи",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			cfg, _ := config.Load(opts.Paths)
+			infos, err := wifi.InterfaceInfos(ctx, opts.Runner)
+			if err != nil {
+				return err
+			}
+			if len(infos) == 0 {
+				fmt.Fprintln(cmd.OutOrStdout(), "Wi-Fi адаптеры не найдены.")
+				return nil
+			}
+			for _, info := range infos {
+				current := ""
+				if info.Name == cfg.MiniPC.APInterface {
+					current = " (текущий)"
+				}
+				caps, rec, err := wifi.RecommendedSettings(ctx, opts.Runner, info.Name)
+				if err != nil {
+					fmt.Fprintf(cmd.OutOrStdout(), "%s%s: не подходит: %v\n", info.Name, current, err)
+					continue
+				}
+				fmt.Fprintf(cmd.OutOrStdout(), "%s%s: %s; рекомендация: %s GHz, канал %d, ширина %d MHz\n",
+					info.Name, current, wifi.FormatCapabilities(caps), rec.Band, rec.Channel, rec.ChannelWidth)
+			}
+			return nil
+		},
+	}
+}
+
+func wifiSetAdapterCmd(ctx context.Context, opts Options) *cobra.Command {
+	return &cobra.Command{
+		Use:   "set-adapter <interface>",
+		Short: "Сменить Wi-Fi адаптер для раздачи и подобрать настройки",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			if err := system.RequireRoot(); err != nil {
+				return err
+			}
+			result, err := wifi.SwitchAccessPoint(ctx, opts.Runner, opts.Paths, args[0])
+			if err != nil {
+				return err
+			}
+			fmt.Fprintf(cmd.OutOrStdout(), "Wi-Fi адаптер для раздачи изменён: %s\n", result.NewInterface)
+			if result.OldInterface != "" && result.OldInterface != result.NewInterface {
+				fmt.Fprintf(cmd.OutOrStdout(), "Старый адаптер возвращён в NetworkManager: %s\n", result.OldInterface)
+			}
+			fmt.Fprintf(cmd.OutOrStdout(), "Автонастройка: %s GHz, канал %d, ширина %d MHz\n", result.Recommendation.Band, result.Recommendation.Channel, result.Recommendation.ChannelWidth)
+			return nil
+		},
+	}
 }
 
 func wifiSetBandCmd(ctx context.Context, opts Options) *cobra.Command {

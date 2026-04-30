@@ -12,6 +12,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 
 	"vpn-router/internal/config"
+	"vpn-router/internal/confirm"
 	"vpn-router/internal/diagnostics"
 	"vpn-router/internal/foreign"
 	"vpn-router/internal/modes"
@@ -23,6 +24,8 @@ import (
 	"vpn-router/internal/sshclient"
 	"vpn-router/internal/summary"
 	"vpn-router/internal/system"
+	"vpn-router/internal/uninstall"
+	"vpn-router/internal/ux"
 	"vpn-router/internal/wifi"
 )
 
@@ -135,6 +138,12 @@ func (m model) updateMenu(key tea.KeyMsg) model {
 			return m
 		}
 		return m.setMenu("main")
+	case "0":
+		if m.menu == "main" {
+			m.menu = "quit"
+			return m
+		}
+		return m.setMenu("main")
 	case "up", "k":
 		if m.cursor > 0 {
 			m.cursor--
@@ -144,18 +153,26 @@ func (m model) updateMenu(key tea.KeyMsg) model {
 			m.cursor++
 		}
 	case "enter":
-		items := m.items()
-		if len(items) == 0 {
-			return m
+		return m.selectMenuItem(m.cursor)
+	default:
+		if len(key.Runes) == 1 && key.Runes[0] >= '1' && key.Runes[0] <= '9' {
+			return m.selectMenuItem(int(key.Runes[0] - '1'))
 		}
-		selected := items[m.cursor]
-		if selected.action == "quit" {
-			m.menu = "quit"
-			return m
-		}
-		return m.run(selected.action)
 	}
 	return m
+}
+
+func (m model) selectMenuItem(index int) model {
+	items := m.items()
+	if index < 0 || index >= len(items) {
+		return m
+	}
+	selected := items[index]
+	if selected.action == "quit" {
+		m.menu = "quit"
+		return m
+	}
+	return m.run(selected.action)
 }
 
 func (m model) updatePrompt(key tea.KeyMsg) model {
@@ -223,22 +240,22 @@ func (m model) updateConfirm(key tea.KeyMsg) model {
 		m.message = "Операция отменена."
 		m.confirm = confirmState{}
 	case "enter":
-		answer := strings.ToLower(strings.TrimSpace(m.confirm.input))
-		switch answer {
-		case "yes":
+		answer, ok := confirm.ParseYesNo(m.confirm.input)
+		if ok && answer {
 			confirm := m.confirm
 			m.mode = modeMenu
 			m.message = ""
 			m.confirm = confirmState{}
 			return m.runConfirm(confirm)
-		case "no":
+		}
+		if ok {
 			m.mode = modeMenu
 			m.message = "Операция отменена."
 			m.confirm = confirmState{}
-		default:
-			m.message = "Нужно обязательно ввести yes или no."
-			m.confirm.input = ""
+			return m
 		}
+		m.message = confirm.RequiredMessage
+		m.confirm.input = ""
 	case "backspace", "ctrl+h":
 		m.confirm.input = trimLastRune(m.confirm.input)
 	default:
@@ -331,7 +348,7 @@ func (m model) viewConfirm() string {
 		fmt.Fprintln(&b)
 	}
 	fmt.Fprintf(&b, "Ответ: %s\n\n", m.confirm.input)
-	fmt.Fprintln(&b, "Введите yes для подтверждения или no для отмены. Esc - отмена")
+	fmt.Fprintln(&b, "Введите да для подтверждения или нет для отмены. Yes/no тоже работают. Esc - отмена")
 	return b.String()
 }
 
@@ -344,14 +361,31 @@ func (m model) setMenu(menu string) model {
 
 func (m model) items() []item {
 	switch m.menu {
+	case "internet":
+		return []item{
+			{"Проверить состояние интернета", "status"},
+			{"Включить VPN", "vpn"},
+			{"Выключить VPN / прямой интернет", "direct"},
+			{"Выбрать выходной сервер", "menu:foreign-switch"},
+			{"Автоматически выбирать выходной сервер", "ru-auto"},
+			{"Назад", "back"},
+		}
+	case "connect":
+		return []item{
+			{"Показать данные для подключения", "connect-info"},
+			{"Показать QR-код клиента", "qr"},
+			{"Проверить состояние", "status"},
+			{"Назад", "back"},
+		}
 	case "direct-rules":
 		return []item{
-			{"Показать правила", "direct-list"},
-			{"Добавить suffix", "direct-add:suffix"},
-			{"Добавить domain", "direct-add:domain"},
-			{"Добавить IP", "direct-add:ip"},
-			{"Добавить CIDR", "direct-add:cidr"},
-			{"Удалить правило", "direct-remove"},
+			{"Показать сайты и адреса", "direct-list-human"},
+			{"Добавить сайт или IP", "direct-add:auto"},
+			{"Удалить сайт или IP", "direct-remove"},
+			{"Расширенно: домен с поддоменами", "direct-add:suffix"},
+			{"Расширенно: только точный домен", "direct-add:domain"},
+			{"Расширенно: IP", "direct-add:ip"},
+			{"Расширенно: подсеть CIDR", "direct-add:cidr"},
 			{"Назад", "back"},
 		}
 	case "ru":
@@ -380,15 +414,42 @@ func (m model) items() []item {
 	case "wifi":
 		return []item{
 			{"Показать Wi-Fi настройки", "wifi-status"},
+			{"Сменить Wi-Fi адаптер для раздачи", "menu:wifi-adapter"},
 			{"Сканировать соседние сети", "wifi-scan"},
+			{"Автоподбор канала", "wifi-auto-channel"},
+			{"Перезапустить Wi-Fi", "wifi-restart"},
 			{"Установить диапазон 2.4 GHz", "wifi-band:2.4"},
 			{"Установить диапазон 5 GHz", "wifi-band:5"},
 			{"Изменить канал", "wifi-channel"},
 			{"Ширина канала 20 MHz", "wifi-width:20"},
 			{"Ширина канала 40 MHz", "wifi-width:40"},
 			{"Ширина канала 80 MHz", "wifi-width:80"},
-			{"Автоподбор канала", "wifi-auto-channel"},
+			{"Назад", "back"},
+		}
+	case "wifi-adapter":
+		return m.wifiAdapterItems()
+	case "problems":
+		return []item{
+			{"Краткая диагностика", "diagnostics"},
+			{"Собрать отчёт без секретов", "diagnostic-report"},
+			{"Показать логи", "logs"},
 			{"Перезапустить Wi-Fi", "wifi-restart"},
+			{"Откатить локальную сеть до состояния без приложения", "restore-network"},
+			{"Назад", "back"},
+		}
+	case "maintenance":
+		return []item{
+			{"Информация по настройке", "info"},
+			{"Показать QR-код клиента", "qr"},
+			{"Резервные копии и откат", "menu:backup"},
+			{"Обновить приложение", "update"},
+			{"Назад", "back"},
+		}
+	case "advanced":
+		return []item{
+			{"Входной VPN-сервер", "menu:ru"},
+			{"Выходные VPN-серверы", "menu:foreign"},
+			{"Правила без VPN в JSON", "direct-list"},
 			{"Назад", "back"},
 		}
 	case "backup":
@@ -399,20 +460,14 @@ func (m model) items() []item {
 		}
 	default:
 		return []item{
-			{"Статус системы", "status"},
-			{"Включить VPN-режим", "vpn"},
-			{"Отключить VPN / включить прямой интернет", "direct"},
-			{"Логи", "logs"},
-			{"Информация и QR-код", "info"},
-			{"QR-код", "qr"},
-			{"Правила сайтов без VPN", "menu:direct-rules"},
-			{"Входной VPN-сервер", "menu:ru"},
-			{"Выходные VPN-серверы", "menu:foreign"},
-			{"Настройки Wi-Fi роутера", "menu:wifi"},
-			{"Резервные копии и откат", "menu:backup"},
-			{"Обновить приложение", "update"},
-			{"Откатить локальную сеть до состояния без приложения", "restore-network"},
-			{"Диагностика", "diagnostics"},
+			{"Интернет", "menu:internet"},
+			{"Подключить устройство", "menu:connect"},
+			{"Сайты без VPN", "menu:direct-rules"},
+			{"Wi-Fi", "menu:wifi"},
+			{"Проблемы и диагностика", "menu:problems"},
+			{"Обслуживание", "menu:maintenance"},
+			{"Расширенное", "menu:advanced"},
+			{"Полностью удалить приложение", "uninstall"},
 			{"Выход", "quit"},
 		}
 	}
@@ -420,8 +475,12 @@ func (m model) items() []item {
 
 func (m model) menuTitle() string {
 	switch m.menu {
+	case "internet":
+		return "интернет"
+	case "connect":
+		return "подключение устройства"
 	case "direct-rules":
-		return "правила без VPN"
+		return "сайты без VPN"
 	case "ru":
 		return "входной VPN-сервер"
 	case "foreign":
@@ -430,6 +489,14 @@ func (m model) menuTitle() string {
 		return "выбор выходного сервера"
 	case "wifi":
 		return "Wi-Fi"
+	case "wifi-adapter":
+		return "смена Wi-Fi адаптера"
+	case "problems":
+		return "проблемы и диагностика"
+	case "maintenance":
+		return "обслуживание"
+	case "advanced":
+		return "расширенное"
 	case "backup":
 		return "резервные копии"
 	default:
@@ -446,7 +513,11 @@ func (m model) run(action string) model {
 	}
 	if strings.HasPrefix(action, "direct-add:") {
 		kind := strings.TrimPrefix(action, "direct-add:")
-		return m.startPrompt("Добавить правило", "Значение "+kind, "", "direct-add:"+kind)
+		label := "Сайт, IP или подсеть"
+		if kind != "auto" {
+			label = "Значение " + kind
+		}
+		return m.startPrompt("Добавить без VPN", label, "", "direct-add:"+kind)
 	}
 	if strings.HasPrefix(action, "wifi-band:") {
 		return m.applyWiFi("Wi-Fi диапазон", func(cfg *config.Config) error {
@@ -469,6 +540,9 @@ func (m model) run(action string) model {
 			return nil
 		})
 	}
+	if strings.HasPrefix(action, "wifi-adapter:") {
+		return m.prepareSwitchAdapter(strings.TrimPrefix(action, "wifi-adapter:"))
+	}
 	if strings.HasPrefix(action, "ru-use:") {
 		name := strings.TrimPrefix(action, "ru-use:")
 		err := m.ruService().Use(m.ctx, name)
@@ -488,15 +562,22 @@ func (m model) run(action string) model {
 	case "logs":
 		logs, err := diagnostics.Logs(m.ctx, m.runner)
 		return m.withResult(logs, err)
+	case "diagnostic-report":
+		report, err := diagnostics.Report(m.ctx, m.runner, m.paths)
+		return m.withResult(report, err)
 	case "info":
 		text, err := summary.Generate(m.paths)
 		return m.withResult(text, err)
+	case "connect-info":
+		return m.showConnectInfo()
 	case "qr":
 		return m.showQR()
 	case "direct-list":
 		return m.showDirectRules()
+	case "direct-list-human":
+		return m.showDirectRulesHuman()
 	case "direct-remove":
-		return m.startPrompt("Удалить правило", "Домен/IP/CIDR", "", "direct-remove")
+		return m.startPrompt("Удалить без VPN", "Сайт, IP или подсеть", "", "direct-remove")
 	case "ru-status":
 		out, err := m.ruService().Status(m.ctx)
 		return m.withResult(out, err)
@@ -538,6 +619,8 @@ func (m model) run(action string) model {
 		return m.startConfirm("Откат сети", "Будут остановлены hostapd/dnsmasq/sing-box, удалены nftables правила vpn-router и Wi-Fi будет возвращён в NetworkManager. Продолжить?", "restore-network", "", nil)
 	case "update":
 		return m.startConfirm("Обновить приложение", "Будет скачан последний GitHub Release, проверен checksum, сделан backup текущего бинарника и установлен новый vpn-router. После обновления нужно заново открыть меню.", "update", "", nil)
+	case "uninstall":
+		return m.startConfirm("Полное удаление", "Будут удалены локальные настройки, данные, бинарник vpn-router, локальный sing-box и прикладные зависимости. Удалённые VPN-серверы не изменяются.\n\nПосле удаления это меню больше не откроется. Продолжить?", "uninstall", "", nil)
 	default:
 		return m
 	}
@@ -552,11 +635,17 @@ func (m model) runPrompt(action string, value string) model {
 		if _, err := system.BackupFile(m.paths.CustomDirect, m.paths.BackupsDir); err != nil {
 			return m.withResult("", err)
 		}
-		added, err := rules.Add(m.paths.CustomDirect, kind, value)
+		added := ""
+		var err error
+		if kind == "auto" {
+			_, added, err = rules.AddAuto(m.paths.CustomDirect, value)
+		} else {
+			added, err = rules.Add(m.paths.CustomDirect, kind, value)
+		}
 		if err == nil {
 			err = rules.AfterChange(m.ctx, m.runner, m.paths)
 		}
-		return m.withResult(fmt.Sprintf("Правило добавлено: %s", added), err)
+		return m.withResult(fmt.Sprintf("Добавлено без VPN: %s", added), err)
 	}
 	switch action {
 	case "direct-remove":
@@ -648,6 +737,21 @@ func (m model) runConfirm(confirm confirmState) model {
 			cfg.WiFi.ChannelWidth = width
 			return nil
 		})
+	case "wifi-switch-adapter":
+		if err := system.RequireRoot(); err != nil {
+			return m.withResult("", err)
+		}
+		result, err := wifi.SwitchAccessPoint(m.ctx, m.runner, m.paths, confirm.value)
+		if err != nil {
+			return m.withResult("", err)
+		}
+		var b strings.Builder
+		fmt.Fprintf(&b, "Wi-Fi адаптер для раздачи изменён: %s\n", result.NewInterface)
+		if result.OldInterface != "" && result.OldInterface != result.NewInterface {
+			fmt.Fprintf(&b, "Старый адаптер возвращён в NetworkManager: %s\n", result.OldInterface)
+		}
+		fmt.Fprintf(&b, "Автонастройка: %s GHz, канал %d, ширина %d MHz", result.Recommendation.Band, result.Recommendation.Channel, result.Recommendation.ChannelWidth)
+		return m.withResult(b.String(), nil)
 	case "wifi-restart":
 		if err := system.RequireRoot(); err != nil {
 			return m.withResult("", err)
@@ -660,6 +764,10 @@ func (m model) runConfirm(confirm confirmState) model {
 	case "update":
 		var b strings.Builder
 		err := (selfupdate.Service{Paths: m.paths, CurrentVersion: m.version, Out: &b}).Run(m.ctx)
+		return m.withResult(b.String(), err)
+	case "uninstall":
+		var b strings.Builder
+		err := (uninstall.Service{Paths: m.paths, Runner: m.runner, Out: &b, RemoveDependencies: true}).Run(m.ctx)
 		return m.withResult(b.String(), err)
 	default:
 		return m
@@ -698,7 +806,7 @@ func (m model) startForeignForm() model {
 
 func (m model) withResult(message string, err error) model {
 	if err != nil {
-		m.message = err.Error()
+		m.message = ux.FriendlyError(err)
 		return m
 	}
 	m.message = strings.TrimSpace(message)
@@ -711,6 +819,29 @@ func (m model) ruService() ru.Service {
 
 func (m model) foreignService() foreign.Service {
 	return foreign.Service{Paths: m.paths, Runner: m.runner, SSH: sshclient.Client{Runner: m.runner}}
+}
+
+func (m model) showConnectInfo() model {
+	cfg, err := config.Load(m.paths)
+	if err != nil {
+		return m.withResult("", err)
+	}
+	var b strings.Builder
+	fmt.Fprintln(&b, "Подключение устройства")
+	fmt.Fprintln(&b)
+	fmt.Fprintf(&b, "Wi-Fi сеть: %s\n", valueOrNotConfigured(cfg.MiniPC.SSID))
+	fmt.Fprintf(&b, "Режим сейчас: %s\n", valueOrNotConfigured(cfg.CurrentMode))
+	if cfg.CurrentMode != "vpn" {
+		fmt.Fprintln(&b, "VPN сейчас выключен. Чтобы весь трафик Wi-Fi шёл через VPN, выберите: Интернет -> Включить VPN.")
+	}
+	if _, err := os.Stat(m.paths.ClientLink); err == nil {
+		fmt.Fprintln(&b, "QR-код клиента доступен в пункте: Показать QR-код клиента.")
+	} else {
+		fmt.Fprintln(&b, "QR-код клиента ещё не создан. Завершите первичную настройку.")
+	}
+	fmt.Fprintln(&b)
+	fmt.Fprintln(&b, "Если устройство подключилось к Wi-Fi, но интернет не работает, откройте: Проблемы и диагностика -> Краткая диагностика.")
+	return m.withResult(b.String(), nil)
 }
 
 func (m model) showQR() model {
@@ -732,6 +863,14 @@ func (m model) showDirectRules() model {
 		return m.withResult("", err)
 	}
 	return m.withResult(string(data), nil)
+}
+
+func (m model) showDirectRulesHuman() model {
+	set, err := rules.Load(m.paths.CustomDirect)
+	if err != nil {
+		return m.withResult("", err)
+	}
+	return m.withResult(rules.FormatHuman(set), nil)
 }
 
 func (m model) showForeignList() model {
@@ -762,6 +901,27 @@ func (m model) foreignSwitchItems() []item {
 		})
 	}
 	items = append(items, item{"Назад", "back"})
+	return items
+}
+
+func (m model) wifiAdapterItems() []item {
+	cfg, _ := config.Load(m.paths)
+	infos, err := wifi.InterfaceInfos(m.ctx, m.runner)
+	if err != nil || len(infos) == 0 {
+		return []item{{"Wi-Fi адаптеры не найдены", "wifi-status"}, {"Назад", "menu:wifi"}}
+	}
+	items := make([]item, 0, len(infos)+1)
+	for _, info := range infos {
+		title := info.Name
+		if info.Type != "" {
+			title += " (" + info.Type + ")"
+		}
+		if info.Name == cfg.MiniPC.APInterface {
+			title += " - текущий"
+		}
+		items = append(items, item{title: title, action: "wifi-adapter:" + info.Name})
+	}
+	items = append(items, item{"Назад", "menu:wifi"})
 	return items
 }
 
@@ -815,6 +975,23 @@ func (m model) prepareAutoChannel() model {
 		"channel": strconv.Itoa(rec.Channel),
 		"width":   strconv.Itoa(rec.ChannelWidth),
 	})
+}
+
+func (m model) prepareSwitchAdapter(iface string) model {
+	if err := system.RequireRoot(); err != nil {
+		return m.withResult("", err)
+	}
+	cfg, err := config.Load(m.paths)
+	if err != nil {
+		return m.withResult("", err)
+	}
+	caps, rec, err := wifi.RecommendedSettings(m.ctx, m.runner, iface)
+	if err != nil {
+		return m.withResult("", err)
+	}
+	body := fmt.Sprintf("Новый адаптер: %s\nТекущий адаптер: %s\n\nВозможности: %s\n\nБудут автоматически применены:\n  Диапазон: %s GHz\n  Канал: %d\n  Ширина: %d MHz\n\nПодключённые клиенты временно потеряют соединение.",
+		iface, valueOrNotConfigured(cfg.MiniPC.APInterface), wifi.FormatCapabilities(caps), rec.Band, rec.Channel, rec.ChannelWidth)
+	return m.startConfirm("Сменить Wi-Fi адаптер", body, "wifi-switch-adapter", iface, nil)
 }
 
 func (m model) showBackups() model {
@@ -879,4 +1056,11 @@ func trimLastRune(value string) string {
 	}
 	runes := []rune(value)
 	return string(runes[:len(runes)-1])
+}
+
+func valueOrNotConfigured(value string) string {
+	if strings.TrimSpace(value) == "" {
+		return "не настроено"
+	}
+	return value
 }

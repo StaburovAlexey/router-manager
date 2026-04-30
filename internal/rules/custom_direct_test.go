@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -54,6 +55,39 @@ func TestRemoveBareIPRemovesStoredCIDR(t *testing.T) {
 	}
 }
 
+func TestRemoveURLRemovesStoredSite(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "custom-direct.json")
+	if err := Save(path, EmptyRuleSet()); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := AddAuto(path, "login.example.com"); err != nil {
+		t.Fatal(err)
+	}
+	removed, err := Remove(path, "https://login.example.com/path")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !removed {
+		t.Fatal("expected URL to remove stored site")
+	}
+}
+
+func TestAddAutoAcceptsURLDomainIPAndCIDR(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "custom-direct.json")
+	if err := Save(path, EmptyRuleSet()); err != nil {
+		t.Fatal(err)
+	}
+	if kind, got, err := AddAuto(path, "https://Login.Example.com/path"); err != nil || kind != "site" || got != "login.example.com" {
+		t.Fatalf("url = %q %q, %v", kind, got, err)
+	}
+	if kind, got, err := AddAuto(path, "1.2.3.4"); err != nil || kind != "ip" || got != "1.2.3.4/32" {
+		t.Fatalf("ip = %q %q, %v", kind, got, err)
+	}
+	if kind, got, err := AddAuto(path, "203.0.113.0/24"); err != nil || kind != "cidr" || got != "203.0.113.0/24" {
+		t.Fatalf("cidr = %q %q, %v", kind, got, err)
+	}
+}
+
 func TestLoadRejectsWrongVersion(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "custom-direct.json")
 	if err := os.WriteFile(path, []byte(`{"version":2,"rules":[]}`), 0o600); err != nil {
@@ -61,6 +95,18 @@ func TestLoadRejectsWrongVersion(t *testing.T) {
 	}
 	if _, err := Load(path); err == nil {
 		t.Fatal("expected version error")
+	}
+}
+
+func TestFormatHumanShowsReadableRules(t *testing.T) {
+	set := EmptyRuleSet()
+	set.Rules[0].DomainSuffix = []string{"gosuslugi.ru"}
+	set.Rules[2].IPCIDR = []string{"1.2.3.4/32"}
+	text := FormatHuman(set)
+	for _, want := range []string{"Сайты и адреса без VPN", "gosuslugi.ru и его поддомены", "1.2.3.4/32"} {
+		if !strings.Contains(text, want) {
+			t.Fatalf("human output does not contain %q:\n%s", want, text)
+		}
 	}
 }
 

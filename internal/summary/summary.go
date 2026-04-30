@@ -27,70 +27,43 @@ func Generate(paths config.Paths) (string, error) {
 	fmt.Fprintln(&b)
 	fmt.Fprintln(&b, "Настройка завершена.")
 	fmt.Fprintln(&b)
-	fmt.Fprintln(&b, "Что делать дальше:")
-	fmt.Fprintf(&b, "  1. Подключите телефон или ноутбук к Wi-Fi сети %s.\n", show(cfg.MiniPC.SSID))
+	fmt.Fprintln(&b, "Что делать дальше обычному пользователю:")
+	fmt.Fprintf(&b, "  1. Подключите телефон или ноутбук к Wi-Fi сети: %s.\n", show(cfg.MiniPC.SSID))
 	fmt.Fprintln(&b, "  2. Откройте меню: sudo vpn-router")
-	fmt.Fprintln(&b, "  3. Выберите \"Включить VPN-режим\" и проверьте интернет.")
+	fmt.Fprintln(&b, "  3. Выберите: Интернет -> Включить VPN.")
+	fmt.Fprintln(&b, "  4. Если интернет не работает, выберите: Проблемы и диагностика -> Краткая диагностика.")
 	fmt.Fprintln(&b)
-	fmt.Fprintln(&b, "Wi-Fi раздача:")
+	fmt.Fprintln(&b, "Быстрые действия:")
+	fmt.Fprintln(&b, "  sudo vpn-router                  открыть меню")
+	fmt.Fprintln(&b, "  sudo vpn-router status           проверить состояние")
+	fmt.Fprintln(&b, "  sudo vpn-router report           собрать отчёт без секретов")
+	fmt.Fprintln(&b, "  sudo vpn-router qr               показать QR-код клиента")
+	fmt.Fprintln(&b, "  sudo vpn-router direct-add site example.com")
+	fmt.Fprintln(&b)
+	fmt.Fprintln(&b, "Подключение:")
 	fmt.Fprintf(&b, "  Сеть: %s\n", show(cfg.MiniPC.SSID))
-	fmt.Fprintf(&b, "  Адаптер: %s\n", show(cfg.MiniPC.APInterface))
-	fmt.Fprintf(&b, "  Диапазон: %s GHz, канал %d, ширина %d MHz\n", show(cfg.WiFi.Band), cfg.WiFi.Channel, cfg.WiFi.ChannelWidth)
-	fmt.Fprintf(&b, "  Подсеть: %s, шлюз: %s\n", show(cfg.MiniPC.LANCIDR), show(cfg.MiniPC.LANGateway))
+	fmt.Fprintf(&b, "  Текущий режим: %s\n", show(cfg.CurrentMode))
+	fmt.Fprintln(&b, "  QR-код клиента: sudo vpn-router qr")
+	if clientLink == "" {
+		fmt.Fprintln(&b, "  Ссылка клиента: ещё не создана")
+	} else {
+		fmt.Fprintln(&b, "  Ссылка клиента: создана")
+	}
 	fmt.Fprintln(&b)
-	fmt.Fprintf(&b, "Входной VPN-сервер: %s:%d, SSH %s:%d\n", show(cfg.RUServer.IP), cfg.RUServer.VPNPort, show(cfg.RUServer.SSHUser), cfg.RUServer.SSHPort)
-	fmt.Fprintln(&b, "Выходные VPN-серверы:")
+	fmt.Fprintln(&b, "Технические сведения:")
+	fmt.Fprintln(&b, "  Wi-Fi раздача:")
+	fmt.Fprintf(&b, "    Адаптер: %s\n", show(cfg.MiniPC.APInterface))
+	fmt.Fprintf(&b, "    Диапазон: %s GHz, канал %d, ширина %d MHz\n", show(cfg.WiFi.Band), cfg.WiFi.Channel, cfg.WiFi.ChannelWidth)
+	fmt.Fprintf(&b, "    Подсеть: %s, шлюз: %s\n", show(cfg.MiniPC.LANCIDR), show(cfg.MiniPC.LANGateway))
+	fmt.Fprintf(&b, "  Входной VPN-сервер: %s:%d, SSH %s:%d\n", show(cfg.RUServer.IP), cfg.RUServer.VPNPort, show(cfg.RUServer.SSHUser), cfg.RUServer.SSHPort)
+	fmt.Fprintln(&b, "  Выходные VPN-серверы:")
 	if len(foreignServers.Servers) == 0 {
-		fmt.Fprintln(&b, "  не добавлены")
+		fmt.Fprintln(&b, "    не добавлены")
 	}
 	for _, server := range foreignServers.Servers {
-		fmt.Fprintf(&b, "  %s: %s:%d, SNI: %s\n", server.Name, server.IP, server.VPNPort, show(server.Reality.SNI))
+		fmt.Fprintf(&b, "    %s: %s:%d, SNI: %s\n", server.Name, server.IP, server.VPNPort, show(server.Reality.SNI))
 	}
-	fmt.Fprintln(&b)
-	fmt.Fprintf(&b, "Текущий режим: %s\n", show(cfg.CurrentMode))
-	fmt.Fprintf(&b, "SNI: auto, выбран: %s\n", show(cfg.Reality.SNI))
-	fmt.Fprintln(&b)
-	fmt.Fprintln(&b, "Ссылка для QR-кода:")
-	if clientLink == "" {
-		fmt.Fprintln(&b, "  ещё не создана")
-	} else {
-		fmt.Fprintf(&b, "  %s\n", clientLink)
-	}
-	fmt.Fprintln(&b)
-	fmt.Fprintln(&b, "QR-код:")
-	fmt.Fprintln(&b, "  sudo vpn-router qr")
-	fmt.Fprintln(&b)
-	fmt.Fprintln(&b, "Основные команды:")
-	for _, command := range []string{
-		"sudo vpn-router                  открыть меню",
-		"sudo vpn-router status           проверить состояние",
-		"sudo vpn-router qr               показать QR-код",
-		"sudo vpn-router update           обновить приложение",
-		"sudo vpn-router restore-network  откатить локальную сеть",
-	} {
-		fmt.Fprintf(&b, "  %s\n", command)
-	}
-	fmt.Fprintln(&b)
-	fmt.Fprintln(&b, "Команды Wi-Fi:")
-	for _, command := range []string{
-		"sudo vpn-router wifi status",
-		"sudo vpn-router wifi scan",
-		"sudo vpn-router wifi set-band 2.4",
-		"sudo vpn-router wifi set-band 5",
-		"sudo vpn-router wifi set-channel <channel>",
-		"sudo vpn-router wifi set-width <20|40|80>",
-		"sudo vpn-router wifi auto-channel",
-		"sudo vpn-router wifi restart",
-	} {
-		fmt.Fprintf(&b, "  %s\n", command)
-	}
-	fmt.Fprintln(&b)
-	fmt.Fprintln(&b, "Примеры сайтов/IP без VPN:")
-	fmt.Fprintln(&b, "  sudo vpn-router direct-add suffix gosuslugi.ru")
-	fmt.Fprintln(&b, "  sudo vpn-router direct-add suffix sberbank.ru")
-	fmt.Fprintln(&b, "  sudo vpn-router direct-add domain login.example.com")
-	fmt.Fprintln(&b, "  sudo vpn-router direct-add ip 1.2.3.4")
-	fmt.Fprintln(&b, "  sudo vpn-router direct-add cidr 203.0.113.0/24")
+	fmt.Fprintf(&b, "  SNI: auto, выбран: %s\n", show(cfg.Reality.SNI))
 	fmt.Fprintln(&b)
 	fmt.Fprintln(&b, "Файлы конфигурации:")
 	fmt.Fprintf(&b, "  %s\n", paths.BaseDir)
