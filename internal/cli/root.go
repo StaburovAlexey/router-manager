@@ -22,6 +22,7 @@ import (
 	"vpn-router/internal/restore"
 	"vpn-router/internal/ru"
 	"vpn-router/internal/rules"
+	"vpn-router/internal/selfupdate"
 	"vpn-router/internal/setup"
 	"vpn-router/internal/shell"
 	"vpn-router/internal/sshclient"
@@ -56,7 +57,7 @@ func NewRoot(opts Options) *cobra.Command {
 				}
 				return (setup.Service{Paths: opts.Paths, Runner: opts.Runner, In: os.Stdin, Out: cmd.OutOrStdout()}).Run(ctx)
 			}
-			return tui.Run(ctx, opts.Paths, opts.Runner)
+			return tui.Run(ctx, opts.Paths, opts.Runner, opts.Version)
 		},
 	}
 	root.CompletionOptions.DisableDefaultCmd = true
@@ -69,12 +70,43 @@ func NewRoot(opts Options) *cobra.Command {
 		logsCmd(ctx, opts),
 		infoCmd(opts),
 		qrCmd(ctx, opts),
+		updateCmd(ctx, opts),
 		restoreNetworkCmd(ctx, opts),
 	}
 	commands = append(commands, directRulesCommands(ctx, opts)...)
 	root.AddCommand(commands...)
 	root.AddCommand(ruCmd(ctx, opts), foreignCmd(ctx, opts), wifiCmd(ctx, opts))
 	return root
+}
+
+func updateCmd(ctx context.Context, opts Options) *cobra.Command {
+	var yes bool
+	var force bool
+	cmd := &cobra.Command{
+		Use:   "update",
+		Short: "Обновить приложение из последнего GitHub Release",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			if err := system.RequireRoot(); err != nil {
+				return err
+			}
+			if !yes {
+				reader := bufio.NewReader(os.Stdin)
+				if !confirm.AskYesNo(reader, cmd.OutOrStdout(), "Скачать и установить последний релиз vpn-router?") {
+					fmt.Fprintln(cmd.OutOrStdout(), "Операция отменена.")
+					return nil
+				}
+			}
+			return (selfupdate.Service{
+				Paths:          opts.Paths,
+				CurrentVersion: opts.Version,
+				Force:          force,
+				Out:            cmd.OutOrStdout(),
+			}).Run(ctx)
+		},
+	}
+	cmd.Flags().BoolVar(&yes, "yes", false, "не спрашивать подтверждение")
+	cmd.Flags().BoolVar(&force, "force", false, "переустановить даже если версия совпадает")
+	return cmd
 }
 
 func restoreNetworkCmd(ctx context.Context, opts Options) *cobra.Command {

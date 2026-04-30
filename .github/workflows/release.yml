@@ -1,0 +1,47 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: Test
+        run: go test ./...
+
+      - name: Build binaries
+        env:
+          VERSION: ${{ github.ref_name }}
+        run: |
+          mkdir -p dist
+          for arch in amd64 arm64; do
+            GOOS=linux GOARCH="${arch}" CGO_ENABLED=0 \
+              go build -ldflags "-X main.version=${VERSION}" \
+              -o "dist/vpn-router-linux-${arch}" ./cmd/vpn-router
+          done
+          (cd dist && sha256sum vpn-router-linux-* > checksums.txt)
+
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          if gh release view "${TAG}" >/dev/null 2>&1; then
+            gh release upload "${TAG}" dist/vpn-router-linux-amd64 dist/vpn-router-linux-arm64 dist/checksums.txt --clobber
+          else
+            gh release create "${TAG}" dist/vpn-router-linux-amd64 dist/vpn-router-linux-arm64 dist/checksums.txt --title "${TAG}" --generate-notes
+          fi

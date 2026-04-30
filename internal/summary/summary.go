@@ -65,6 +65,7 @@ func Generate(paths config.Paths) (string, error) {
 		"sudo vpn-router                  открыть меню",
 		"sudo vpn-router status           проверить состояние",
 		"sudo vpn-router qr               показать QR-код",
+		"sudo vpn-router update           обновить приложение",
 		"sudo vpn-router restore-network  откатить локальную сеть",
 	} {
 		fmt.Fprintf(&b, "  %s\n", command)

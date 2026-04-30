@@ -18,6 +18,7 @@ import (
 	"vpn-router/internal/restore"
 	"vpn-router/internal/ru"
 	"vpn-router/internal/rules"
+	"vpn-router/internal/selfupdate"
 	"vpn-router/internal/shell"
 	"vpn-router/internal/sshclient"
 	"vpn-router/internal/summary"
@@ -75,6 +76,7 @@ type model struct {
 	ctx     context.Context
 	paths   config.Paths
 	runner  shell.Runner
+	version string
 	cursor  int
 	menu    string
 	mode    viewMode
@@ -84,13 +86,14 @@ type model struct {
 	confirm confirmState
 }
 
-func Run(ctx context.Context, paths config.Paths, runner shell.Runner) error {
+func Run(ctx context.Context, paths config.Paths, runner shell.Runner, version string) error {
 	m := model{
-		ctx:    ctx,
-		paths:  paths,
-		runner: runner,
-		menu:   "main",
-		mode:   modeMenu,
+		ctx:     ctx,
+		paths:   paths,
+		runner:  runner,
+		version: version,
+		menu:    "main",
+		mode:    modeMenu,
 	}
 	_, err := tea.NewProgram(m).Run()
 	return err
@@ -407,6 +410,7 @@ func (m model) items() []item {
 			{"Выходные VPN-серверы", "menu:foreign"},
 			{"Настройки Wi-Fi роутера", "menu:wifi"},
 			{"Резервные копии и откат", "menu:backup"},
+			{"Обновить приложение", "update"},
 			{"Откатить локальную сеть до состояния без приложения", "restore-network"},
 			{"Диагностика", "diagnostics"},
 			{"Выход", "quit"},
@@ -532,6 +536,8 @@ func (m model) run(action string) model {
 		return m.showBackups()
 	case "restore-network":
 		return m.startConfirm("Откат сети", "Будут остановлены hostapd/dnsmasq/sing-box, удалены nftables правила vpn-router и Wi-Fi будет возвращён в NetworkManager. Продолжить?", "restore-network", "", nil)
+	case "update":
+		return m.startConfirm("Обновить приложение", "Будет скачан последний GitHub Release, проверен checksum, сделан backup текущего бинарника и установлен новый vpn-router. После обновления нужно заново открыть меню.", "update", "", nil)
 	default:
 		return m
 	}
@@ -651,6 +657,10 @@ func (m model) runConfirm(confirm confirmState) model {
 	case "restore-network":
 		err := (restore.Service{Paths: m.paths, Runner: m.runner}).Run(m.ctx)
 		return m.withResult("Локальные сетевые изменения vpn-router отключены.", err)
+	case "update":
+		var b strings.Builder
+		err := (selfupdate.Service{Paths: m.paths, CurrentVersion: m.version, Out: &b}).Run(m.ctx)
+		return m.withResult(b.String(), err)
 	default:
 		return m
 	}
