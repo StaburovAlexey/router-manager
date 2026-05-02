@@ -100,7 +100,7 @@ func (s Service) Run(ctx context.Context) error {
 	}
 
 	printStep(s.Out, 4, 5, "Входной сервер")
-	cfg.RUServer.IP = ask(reader, s.Out, "IP входного сервера", cfg.RUServer.IP)
+	cfg.RUServer.IP = askRequired(reader, s.Out, "IP входного сервера", cfg.RUServer.IP)
 	cfg.RUServer.SSHUser = ask(reader, s.Out, "SSH user входного сервера", defaultString(cfg.RUServer.SSHUser, "root"))
 	cfg.RUServer.SSHPort = askInt(reader, s.Out, "SSH port входного сервера", defaultInt(cfg.RUServer.SSHPort, 22))
 	cfg.RUServer.TunnelPort = askInt(reader, s.Out, "порт подключения входного сервера", defaultInt(cfg.RUServer.TunnelPort, 443))
@@ -280,7 +280,7 @@ func configureForeign(ctx context.Context, paths config.Paths, runner shell.Runn
 	}
 	foreignServer := config.ForeignServer{
 		Name:       ask(reader, out, "Имя выходного сервера", defaultName),
-		IP:         ask(reader, out, "IP выходного сервера", ""),
+		IP:         askRequired(reader, out, "IP выходного сервера", ""),
 		SSHUser:    ask(reader, out, "SSH user выходного сервера", "root"),
 		SSHPort:    askInt(reader, out, "SSH port выходного сервера", 22),
 		TunnelPort: askInt(reader, out, "порт подключения выходного сервера", 443),
@@ -577,6 +577,16 @@ func ask(reader *bufio.Reader, out io.Writer, label, def string) string {
 		return def
 	}
 	return text
+}
+
+func askRequired(reader *bufio.Reader, out io.Writer, label, def string) string {
+	for {
+		value := ask(reader, out, label, def)
+		if strings.TrimSpace(value) != "" {
+			return value
+		}
+		fmt.Fprintf(out, "%s не может быть пустым.\n", label)
+	}
 }
 
 func askSecret(reader *bufio.Reader, out io.Writer, label string) string {
