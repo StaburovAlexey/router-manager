@@ -3,9 +3,14 @@ package setup
 import (
 	"bufio"
 	"bytes"
+	"context"
 	"errors"
 	"strings"
 	"testing"
+
+	"router-manager/internal/config"
+	"router-manager/internal/shell"
+	"router-manager/internal/wifi"
 )
 
 func TestAskRequiredRepeatsWhenValueAndDefaultAreEmpty(t *testing.T) {
@@ -84,5 +89,129 @@ func TestShouldReenterServerDetailsIgnoresOtherErrors(t *testing.T) {
 	}
 	if out.Len() != 0 {
 		t.Fatalf("unexpected output for ignored error:\n%s", out.String())
+	}
+}
+
+func TestChooseWiFiSettingsAutoAppliesRecommendation(t *testing.T) {
+	cfg := config.DefaultConfig()
+	cfg.MiniPC.APInterface = "wlan0"
+	caps := wifi.Capabilities{
+		Supports24: true,
+		Supports5:  true,
+		Channels24: []int{1, 6, 11},
+		Channels5:  []int{36, 40},
+		Widths:     []int{20, 40, 80},
+	}
+	reader := bufio.NewReader(strings.NewReader("\n"))
+	var out bytes.Buffer
+	runner := &shell.DryRunner{Outputs: map[string]string{"iw dev wlan0 scan": ""}}
+
+	if err := chooseWiFiSettings(context.Background(), runner, &cfg, caps, reader, &out); err != nil {
+		t.Fatal(err)
+	}
+	if cfg.WiFi.Band != "5" || cfg.WiFi.Channel != 36 || cfg.WiFi.ChannelWidth != 80 {
+		t.Fatalf("unexpected auto settings: %#v", cfg.WiFi)
+	}
+	if !strings.Contains(out.String(), "Автонастройка Wi-Fi: 5 GHz, канал 36, ширина 80 MHz") {
+		t.Fatalf("missing auto summary:\n%s", out.String())
+	}
+}
+
+func TestChooseWiFiSettingsManualDoesNotShowUnsupportedFiveGHz(t *testing.T) {
+	cfg := config.DefaultConfig()
+	cfg.WiFi.Band = "5"
+	caps := wifi.Capabilities{
+		Supports24: true,
+		Channels24: []int{1, 6},
+		Widths:     []int{20},
+	}
+	reader := bufio.NewReader(strings.NewReader("manual\n6\n"))
+	var out bytes.Buffer
+
+	if err := chooseWiFiSettings(context.Background(), &shell.DryRunner{}, &cfg, caps, reader, &out); err != nil {
+		t.Fatal(err)
+	}
+	if cfg.WiFi.Band != "2.4" || cfg.WiFi.Channel != 6 || cfg.WiFi.ChannelWidth != 20 {
+		t.Fatalf("unexpected manual settings: %#v", cfg.WiFi)
+	}
+	if strings.Contains(out.String(), "5 GHz") {
+		t.Fatalf("manual setup must not show unsupported 5 GHz option:\n%s", out.String())
+	}
+}
+
+func TestChooseWiFiSettingsManualRejectsUnsupportedChannel(t *testing.T) {
+	cfg := config.DefaultConfig()
+	caps := wifi.Capabilities{
+		Supports24: true,
+		Channels24: []int{1, 6},
+		Widths:     []int{20},
+	}
+	reader := bufio.NewReader(strings.NewReader("manual\n11\n6\n"))
+	var out bytes.Buffer
+
+	if err := chooseWiFiSettings(context.Background(), &shell.DryRunner{}, &cfg, caps, reader, &out); err != nil {
+		t.Fatal(err)
+	}
+	if cfg.WiFi.Channel != 6 {
+		t.Fatalf("channel = %d, want 6", cfg.WiFi.Channel)
+	}
+	if !strings.Contains(out.String(), "Доступно: 1, 6") {
+		t.Fatalf("missing supported channel hint:\n%s", out.String())
+	}
+}
+
+func TestChooseWiFiSettingsManualSupportsFiveGHzWhenAvailable(t *testing.T) {
+	cfg := config.DefaultConfig()
+	caps := wifi.Capabilities{
+		Supports24: true,
+		Supports5:  true,
+		Channels24: []int{1, 6},
+		Channels5:  []int{36, 40},
+		Widths:     []int{20, 80},
+	}
+	reader := bufio.NewReader(strings.NewReader("manual\n5\n36\n80\n"))
+	var out bytes.Buffer
+
+	if err := chooseWiFiSettings(context.Background(), &shell.DryRunner{}, &cfg, caps, reader, &out); err != nil {
+		t.Fatal(err)
+	}
+	if cfg.WiFi.Band != "5" || cfg.WiFi.Channel != 36 || cfg.WiFi.ChannelWidth != 80 {
+		t.Fatalf("unexpected manual 5 GHz settings: %#v", cfg.WiFi)
+	}
+	if !strings.Contains(out.String(), "Диапазон Wi-Fi (доступно: 2.4 или 5)") {
+		t.Fatalf("missing supported band prompt:\n%s", out.String())
+	}
+}
+
+func TestChooseAPInterfaceRequiresExplicitSelectionOnResume(t *testing.T) {
+	reader := bufio.NewReader(strings.NewReader("\n2\n"))
+	var out bytes.Buffer
+	runner := &shell.DryRunner{Outputs: map[string]string{
+		"iw dev": `
+phy#0
+	Interface wlan0
+		type managed
+phy#1
+	Interface wlan1
+		type managed
+`,
+		"ip route show default": "default via 192.0.2.1 dev eth0",
+		"ip -o link show": `
+1: lo: <LOOPBACK> state UNKNOWN link/loopback 00:00:00:00:00:00
+2: wlan0: <BROADCAST> state DOWN link/ether 00:11:22:33:44:55
+3: wlan1: <BROADCAST> state DOWN link/ether 00:11:22:33:44:66
+`,
+	}}
+
+	iface := chooseAPInterface(context.Background(), runner, reader, &out, "wlan0", "eth0")
+
+	if iface != "wlan1" {
+		t.Fatalf("interface = %q, want explicit second choice wlan1", iface)
+	}
+	if !strings.Contains(out.String(), "wlan0 текущий") {
+		t.Fatalf("current adapter was not marked:\n%s", out.String())
+	}
+	if !strings.Contains(out.String(), "Нужно выбрать значение из списка.") {
+		t.Fatalf("empty answer must not silently reuse current adapter:\n%s", out.String())
 	}
 }

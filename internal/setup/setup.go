@@ -96,7 +96,7 @@ func (s Service) Run(ctx context.Context) error {
 		cfg.MiniPC.LANGateway = ask(reader, s.Out, "LAN gateway", cfg.MiniPC.LANGateway)
 		cfg.WiFi.Country = ask(reader, s.Out, "Regulatory domain", cfg.WiFi.Country)
 	}
-	if err := chooseWiFiSettings(&cfg, apCaps, reader, s.Out); err != nil {
+	if err := chooseWiFiSettings(ctx, s.Runner, &cfg, apCaps, reader, s.Out); err != nil {
 		return err
 	}
 
@@ -521,39 +521,140 @@ func showValue(value string) string {
 	return value
 }
 
-func chooseWiFiSettings(cfg *config.Config, caps wifi.Capabilities, reader *bufio.Reader, out io.Writer) error {
-	rec := wifi.DefaultSettings(caps)
-	defaultBand := cfg.WiFi.Band
-	if err := wifi.ValidateSettings(defaultBand, cfg.WiFi.Channel, cfg.WiFi.ChannelWidth, caps); err != nil {
-		defaultBand = rec.Band
-		cfg.WiFi.Channel = rec.Channel
-		cfg.WiFi.ChannelWidth = rec.ChannelWidth
+func chooseWiFiSettings(ctx context.Context, runner shell.Runner, cfg *config.Config, caps wifi.Capabilities, reader *bufio.Reader, out io.Writer) error {
+	mode := chooseWiFiSetupMode(reader, out)
+	if mode == "auto" {
+		return chooseWiFiSettingsAuto(ctx, runner, cfg, caps, out)
 	}
+	return chooseWiFiSettingsManual(cfg, caps, reader, out)
+}
+
+func chooseWiFiSetupMode(reader *bufio.Reader, out io.Writer) string {
 	for {
-		band := ask(reader, out, "Диапазон Wi-Fi: 2.4 или 5", defaultBand)
-		if err := wifi.ConfigureBand(cfg, band); err != nil {
-			fmt.Fprintln(out, err)
-			continue
+		fmt.Fprintln(out, "Режим настройки Wi-Fi:")
+		fmt.Fprintln(out, "  1) auto - подобрать диапазон, канал и ширину автоматически")
+		fmt.Fprintln(out, "  2) manual - выбрать параметры вручную")
+		answer := strings.ToLower(ask(reader, out, "Режим Wi-Fi: auto/manual", "auto"))
+		switch answer {
+		case "1", "auto", "a", "авто", "автоматически":
+			return "auto"
+		case "2", "manual", "m", "ручной", "вручную":
+			return "manual"
+		default:
+			fmt.Fprintln(out, "Введите auto или manual.")
 		}
-		if band == "2.4" && !caps.Supports24 {
-			fmt.Fprintln(out, "Выбранный адаптер не поддерживает 2.4 GHz. Доступно:", wifi.FormatCapabilities(caps))
-			continue
-		}
-		if band == "5" && !caps.Supports5 {
-			fmt.Fprintln(out, "Выбранный адаптер не поддерживает 5 GHz. Доступно:", wifi.FormatCapabilities(caps))
-			continue
-		}
-		break
 	}
-	cfg.WiFi.Channel = askSupportedChannel(reader, out, cfg.WiFi.Band, cfg.WiFi.Channel, caps)
-	cfg.WiFi.ChannelWidth = askSupportedWidth(reader, out, cfg.WiFi.ChannelWidth, caps)
+}
+
+func chooseWiFiSettingsAuto(ctx context.Context, runner shell.Runner, cfg *config.Config, caps wifi.Capabilities, out io.Writer) error {
+	networks, _ := wifi.Scan(ctx, runner, cfg.MiniPC.APInterface)
+	rec := wifi.Recommend(caps, networks)
+	if err := wifi.ValidateSettings(rec.Band, rec.Channel, rec.ChannelWidth, caps); err != nil {
+		rec = fallbackRecommendation(caps)
+	}
+	wifi.ApplyRecommendation(cfg, rec)
+	if err := wifi.ValidateSettings(cfg.WiFi.Band, cfg.WiFi.Channel, cfg.WiFi.ChannelWidth, caps); err != nil {
+		return err
+	}
+	fmt.Fprintf(out, "Автонастройка Wi-Fi: %s GHz, канал %d, ширина %d MHz\n", cfg.WiFi.Band, cfg.WiFi.Channel, cfg.WiFi.ChannelWidth)
+	return nil
+}
+
+func chooseWiFiSettingsManual(cfg *config.Config, caps wifi.Capabilities, reader *bufio.Reader, out io.Writer) error {
+	band, err := chooseSupportedBand(reader, out, cfg.WiFi.Band, caps)
+	if err != nil {
+		return err
+	}
+	if err := wifi.ConfigureBand(cfg, band); err != nil {
+		return err
+	}
+	channel, err := askSupportedChannel(reader, out, cfg.WiFi.Band, cfg.WiFi.Channel, caps)
+	if err != nil {
+		return err
+	}
+	width, err := askSupportedWidth(reader, out, cfg.WiFi.ChannelWidth, caps)
+	if err != nil {
+		return err
+	}
+	cfg.WiFi.Channel = channel
+	cfg.WiFi.ChannelWidth = width
 	return wifi.ValidateSettings(cfg.WiFi.Band, cfg.WiFi.Channel, cfg.WiFi.ChannelWidth, caps)
 }
 
-func askSupportedChannel(reader *bufio.Reader, out io.Writer, band string, def int, caps wifi.Capabilities) int {
+func chooseSupportedBand(reader *bufio.Reader, out io.Writer, def string, caps wifi.Capabilities) (string, error) {
+	bands := supportedBands(caps)
+	if len(bands) == 0 {
+		return "", fmt.Errorf("выбранный Wi-Fi адаптер не показывает доступные AP-диапазоны")
+	}
+	if len(bands) == 1 {
+		fmt.Fprintf(out, "Доступен только диапазон Wi-Fi: %s GHz\n", bands[0])
+		return bands[0], nil
+	}
+	if !containsString(bands, def) {
+		def = bands[0]
+	}
+	for {
+		band := ask(reader, out, "Диапазон Wi-Fi (доступно: "+strings.Join(bands, " или ")+")", def)
+		if containsString(bands, band) {
+			return band, nil
+		}
+		fmt.Fprintf(out, "Введите один из доступных диапазонов: %s.\n", strings.Join(bands, ", "))
+	}
+}
+
+func supportedBands(caps wifi.Capabilities) []string {
+	var bands []string
+	if caps.Supports24 && len(caps.Channels24) > 0 {
+		bands = append(bands, "2.4")
+	}
+	if caps.Supports5 && len(caps.Channels5) > 0 {
+		bands = append(bands, "5")
+	}
+	return bands
+}
+
+func fallbackRecommendation(caps wifi.Capabilities) wifi.Recommendation {
+	if caps.Supports5 && len(caps.Channels5) > 0 {
+		return wifi.Recommendation{Band: "5", Channel: preferredChannel(caps.Channels5, []int{36, 40, 44, 48}), ChannelWidth: bestManualWidth(caps, 80)}
+	}
+	return wifi.Recommendation{Band: "2.4", Channel: preferredChannel(caps.Channels24, []int{6, 1, 11}), ChannelWidth: bestManualWidth(caps, 40)}
+}
+
+func preferredChannel(allowed []int, preferred []int) int {
+	for _, channel := range preferred {
+		if containsInt(allowed, channel) {
+			return channel
+		}
+	}
+	if len(allowed) > 0 {
+		return allowed[0]
+	}
+	return 0
+}
+
+func bestManualWidth(caps wifi.Capabilities, wanted int) int {
+	if containsInt(caps.Widths, wanted) {
+		return wanted
+	}
+	for _, fallback := range []int{40, 20} {
+		if containsInt(caps.Widths, fallback) {
+			return fallback
+		}
+	}
+	return 20
+}
+
+func askSupportedChannel(reader *bufio.Reader, out io.Writer, band string, def int, caps wifi.Capabilities) (int, error) {
 	allowed := caps.Channels24
 	if band == "5" {
 		allowed = caps.Channels5
+	}
+	if len(allowed) == 0 {
+		return 0, fmt.Errorf("для диапазона %s GHz нет доступных AP-каналов", band)
+	}
+	if len(allowed) == 1 {
+		fmt.Fprintf(out, "Доступен только канал Wi-Fi: %d\n", allowed[0])
+		return allowed[0], nil
 	}
 	if !containsInt(allowed, def) && len(allowed) > 0 {
 		def = allowed[0]
@@ -572,23 +673,39 @@ func askSupportedChannel(reader *bufio.Reader, out io.Writer, band string, def i
 	for {
 		channel := askInt(reader, out, "Канал Wi-Fi (доступно: "+wifi.FormatInts(allowed)+")", def)
 		if containsInt(allowed, channel) {
-			return channel
+			return channel, nil
 		}
 		fmt.Fprintf(out, "Канал %d не поддерживается выбранным адаптером. Доступно: %s\n", channel, wifi.FormatInts(allowed))
 	}
 }
 
-func askSupportedWidth(reader *bufio.Reader, out io.Writer, def int, caps wifi.Capabilities) int {
+func askSupportedWidth(reader *bufio.Reader, out io.Writer, def int, caps wifi.Capabilities) (int, error) {
+	if len(caps.Widths) == 0 {
+		return 0, fmt.Errorf("выбранный Wi-Fi адаптер не показывает доступные ширины канала")
+	}
+	if len(caps.Widths) == 1 {
+		fmt.Fprintf(out, "Доступна только ширина канала: %d MHz\n", caps.Widths[0])
+		return caps.Widths[0], nil
+	}
 	if !containsInt(caps.Widths, def) && len(caps.Widths) > 0 {
 		def = caps.Widths[0]
 	}
 	for {
 		width := askInt(reader, out, "Ширина канала MHz (доступно: "+wifi.FormatInts(caps.Widths)+")", def)
 		if containsInt(caps.Widths, width) {
-			return width
+			return width, nil
 		}
 		fmt.Fprintf(out, "Ширина %d MHz не поддерживается выбранным адаптером. Доступно: %s\n", width, wifi.FormatInts(caps.Widths))
 	}
+}
+
+func containsString(values []string, value string) bool {
+	for _, existing := range values {
+		if existing == value {
+			return true
+		}
+	}
+	return false
 }
 
 func containsInt(values []int, value int) bool {
@@ -679,28 +796,24 @@ func describeAutoWAN(ctx context.Context, runner shell.Runner, out io.Writer) st
 func chooseAPInterface(ctx context.Context, runner shell.Runner, reader *bufio.Reader, out io.Writer, current string, wan string) string {
 	interfaces, err := wifi.InterfaceInfos(ctx, runner)
 	if err != nil || len(interfaces) == 0 {
-		return ask(reader, out, "Wi-Fi адаптер для раздачи интернета", current)
+		return askExplicit(reader, out, "Wi-Fi адаптер для раздачи интернета", current)
 	}
 	netInfo := interfaceInfoMap(ctx, runner)
 	fmt.Fprintln(out)
 	fmt.Fprintln(out, "Выберите Wi-Fi адаптер, который будет раздавать интернет.")
 	fmt.Fprintln(out, "Этот адаптер будет использоваться только как точка доступа.")
-	defaultName := current
-	if defaultName != "" && (interfaceHasIPv4(netInfo[defaultName]) || isP2PInterface(interfaces, defaultName)) {
-		defaultName = ""
-	}
 	hasUsable := false
 	for i, iface := range interfaces {
 		info := netInfo[iface.Name]
 		if !isP2PType(iface.Type) {
 			hasUsable = true
 		}
-		if defaultName == "" && iface.Name != wan && !interfaceHasIPv4(info) && !isP2PType(iface.Type) {
-			defaultName = iface.Name
-		}
 		note := ""
+		if iface.Name == current {
+			note += " текущий"
+		}
 		if iface.Name == wan {
-			note = " не рекомендуется: выбран как WAN"
+			note += " не рекомендуется: выбран как WAN"
 		}
 		if interfaceHasIPv4(info) {
 			note += " ВНИМАНИЕ: сейчас имеет IP " + strings.Join(info.IPv4, ", ")
@@ -714,9 +827,9 @@ func chooseAPInterface(ctx context.Context, runner shell.Runner, reader *bufio.R
 	}
 	if !hasUsable {
 		fmt.Fprintln(out, "В списке нет подходящего Wi-Fi интерфейса для точки доступа. P2P-device не подходит для hostapd.")
-		return ask(reader, out, "Wi-Fi адаптер для раздачи интернета", current)
+		return askExplicit(reader, out, "Wi-Fi адаптер для раздачи интернета", current)
 	}
-	return chooseAPByNumberOrName(reader, out, defaultName, interfaces)
+	return chooseAPByNumberOrName(reader, out, interfaces)
 }
 
 func confirmAPInterfaceDisruption(ctx context.Context, runner shell.Runner, reader *bufio.Reader, out io.Writer, apInterface string, wanInterface string) error {
@@ -779,6 +892,47 @@ func chooseByNumberOrName(reader *bufio.Reader, out io.Writer, label string, def
 	}
 }
 
+func chooseByNumberOrNameRequired(reader *bufio.Reader, out io.Writer, label string, names []string) string {
+	for {
+		fmt.Fprintf(out, "%s (номер или имя): ", label)
+		answer, _ := reader.ReadString('\n')
+		answer = strings.TrimSpace(answer)
+		if answer == "" {
+			fmt.Fprintln(out, "Нужно выбрать значение из списка.")
+			continue
+		}
+		if n, err := strconv.Atoi(answer); err == nil {
+			if n >= 1 && n <= len(names) {
+				return names[n-1]
+			}
+			fmt.Fprintf(out, "Введите номер от 1 до %d или имя интерфейса.\n", len(names))
+			continue
+		}
+		for _, name := range names {
+			if answer == name {
+				return answer
+			}
+		}
+		fmt.Fprintln(out, "Такого интерфейса нет в списке. Введите номер или имя из списка.")
+	}
+}
+
+func askExplicit(reader *bufio.Reader, out io.Writer, label, current string) string {
+	for {
+		if current == "" {
+			fmt.Fprintf(out, "%s: ", label)
+		} else {
+			fmt.Fprintf(out, "%s (текущий: %s): ", label, current)
+		}
+		answer, _ := reader.ReadString('\n')
+		answer = strings.TrimSpace(answer)
+		if answer != "" {
+			return answer
+		}
+		fmt.Fprintln(out, "Нужно выбрать Wi-Fi адаптер для раздачи.")
+	}
+}
+
 func interfaceNames(interfaces []network.InterfaceInfo) []string {
 	names := make([]string, 0, len(interfaces))
 	for _, iface := range interfaces {
@@ -795,14 +949,10 @@ func wifiNames(interfaces []wifi.InterfaceInfo) []string {
 	return names
 }
 
-func chooseAPByNumberOrName(reader *bufio.Reader, out io.Writer, def string, interfaces []wifi.InterfaceInfo) string {
+func chooseAPByNumberOrName(reader *bufio.Reader, out io.Writer, interfaces []wifi.InterfaceInfo) string {
 	names := wifiNames(interfaces)
 	for {
-		answer := chooseByNumberOrName(reader, out, "Wi-Fi адаптер для раздачи", def, names)
-		if answer == "" {
-			fmt.Fprintln(out, "Нужно выбрать Wi-Fi адаптер для раздачи из списка.")
-			continue
-		}
+		answer := chooseByNumberOrNameRequired(reader, out, "Wi-Fi адаптер для раздачи", names)
 		if isP2PInterface(interfaces, answer) {
 			fmt.Fprintf(out, "%s является P2P-device и не подходит для точки доступа hostapd. Выберите обычный Wi-Fi интерфейс, например wlan0/wlp*/wlx* type=managed или type=AP.\n", answer)
 			continue
@@ -827,10 +977,11 @@ func isP2PType(value string) bool {
 func askPassword(reader *bufio.Reader, out io.Writer, label string) string {
 	for {
 		value := ask(reader, out, label, "")
-		if len(value) >= 8 && len(value) <= 63 {
+		if err := wifi.ValidatePassword(value); err == nil {
 			return value
+		} else {
+			fmt.Fprintln(out, err)
 		}
-		fmt.Fprintln(out, "Пароль Wi-Fi должен быть от 8 до 63 символов.")
 	}
 }
 

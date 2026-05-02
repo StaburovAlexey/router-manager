@@ -76,17 +76,18 @@ type confirmState struct {
 }
 
 type model struct {
-	ctx     context.Context
-	paths   config.Paths
-	runner  shell.Runner
-	version string
-	cursor  int
-	menu    string
-	mode    viewMode
-	message string
-	prompt  promptState
-	form    formState
-	confirm confirmState
+	ctx         context.Context
+	paths       config.Paths
+	runner      shell.Runner
+	version     string
+	requireRoot func() error
+	cursor      int
+	menu        string
+	mode        viewMode
+	message     string
+	prompt      promptState
+	form        formState
+	confirm     confirmState
 }
 
 func Run(ctx context.Context, paths config.Paths, runner shell.Runner, version string) error {
@@ -414,6 +415,8 @@ func (m model) items() []item {
 	case "wifi":
 		return []item{
 			{"Показать Wi-Fi настройки", "wifi-status"},
+			{"Изменить название сети", "wifi-ssid"},
+			{"Изменить пароль", "wifi-password"},
 			{"Сменить Wi-Fi адаптер для раздачи", "menu:wifi-adapter"},
 			{"Сканировать соседние сети", "wifi-scan"},
 			{"Автоподбор канала", "wifi-auto-channel"},
@@ -605,6 +608,10 @@ func (m model) run(action string) model {
 		return m.startPrompt("Очистить VPS выходного сервера", "Имя выходного сервера", m.firstForeignName(), "foreign-cleanup")
 	case "wifi-status":
 		return m.showWiFiStatus()
+	case "wifi-ssid":
+		return m.startPrompt("Изменить название сети", "SSID", "", "wifi-ssid")
+	case "wifi-password":
+		return m.startPrompt("Изменить пароль Wi-Fi", "Новый пароль Wi-Fi", "", "wifi-password")
 	case "wifi-scan":
 		return m.showWiFiScan()
 	case "wifi-channel":
@@ -683,6 +690,24 @@ func (m model) runPrompt(action string, value string) model {
 		}
 		return m.applyWiFi("Wi-Fi канал", func(cfg *config.Config) error {
 			cfg.WiFi.Channel = channel
+			return nil
+		})
+	case "wifi-ssid":
+		ssid := strings.TrimSpace(value)
+		return m.applyWiFi("Wi-Fi настройки", func(cfg *config.Config) error {
+			if err := wifi.ValidateSSID(ssid); err != nil {
+				return err
+			}
+			cfg.MiniPC.SSID = ssid
+			return nil
+		})
+	case "wifi-password":
+		password := strings.TrimSpace(value)
+		return m.applyWiFi("Wi-Fi настройки", func(cfg *config.Config) error {
+			if err := wifi.ValidatePassword(password); err != nil {
+				return err
+			}
+			cfg.WiFi.Password = password
 			return nil
 		})
 	default:
@@ -1031,7 +1056,7 @@ func (m model) firstForeignName() string {
 }
 
 func (m model) applyWiFi(success string, mutate func(*config.Config) error) model {
-	if err := system.RequireRoot(); err != nil {
+	if err := m.checkRoot(); err != nil {
 		return m.withResult("", err)
 	}
 	cfg, err := config.Load(m.paths)
@@ -1048,6 +1073,13 @@ func (m model) applyWiFi(success string, mutate func(*config.Config) error) mode
 		return m.withResult("", err)
 	}
 	return m.withResult(success+" применены.", nil)
+}
+
+func (m model) checkRoot() error {
+	if m.requireRoot != nil {
+		return m.requireRoot()
+	}
+	return system.RequireRoot()
 }
 
 func trimLastRune(value string) string {

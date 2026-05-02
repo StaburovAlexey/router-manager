@@ -5,6 +5,8 @@ import (
 	"context"
 	"errors"
 	"io"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -21,6 +23,11 @@ func TestCommandSurface(t *testing.T) {
 	}
 	if cmd, _, err := root.Find([]string{"geo"}); err == nil && cmd != root {
 		t.Fatalf("geo command must not exist")
+	}
+	for _, args := range [][]string{{"wifi", "set-ssid"}, {"wifi", "set-password"}} {
+		if _, _, err := root.Find(args); err != nil {
+			t.Fatalf("command %s not found: %v", strings.Join(args, " "), err)
+		}
 	}
 }
 
@@ -120,4 +127,132 @@ func TestInitialSetupRunsSetupAfterBootstrap(t *testing.T) {
 	if strings.Join(calls, ",") != "bootstrap,setup" {
 		t.Fatalf("unexpected calls: %v", calls)
 	}
+}
+
+func TestWiFiSetSSIDUpdatesConfigAndAppliesAccessPoint(t *testing.T) {
+	paths := testWiFiPaths(t)
+	runner := testWiFiRunner()
+	root := NewRoot(Options{Paths: paths, Runner: runner, RequireRoot: func() error { return nil }})
+	var out bytes.Buffer
+	root.SetOut(&out)
+	root.SetArgs([]string{"wifi", "set-ssid", "NewAP"})
+
+	if err := root.Execute(); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := config.Load(paths)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.MiniPC.SSID != "NewAP" {
+		t.Fatalf("SSID = %q, want NewAP", cfg.MiniPC.SSID)
+	}
+	if !called(runner.Calls, "systemctl restart hostapd") {
+		t.Fatalf("access point was not applied: %#v", runner.Calls)
+	}
+}
+
+func TestWiFiSetPasswordUpdatesConfigAndAppliesAccessPoint(t *testing.T) {
+	paths := testWiFiPaths(t)
+	runner := testWiFiRunner()
+	root := NewRoot(Options{Paths: paths, Runner: runner, RequireRoot: func() error { return nil }})
+	var out bytes.Buffer
+	root.SetOut(&out)
+	root.SetArgs([]string{"wifi", "set-password"})
+	withStdin(t, "newpassword\n", func() {
+		if err := root.Execute(); err != nil {
+			t.Fatal(err)
+		}
+	})
+	cfg, err := config.Load(paths)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.WiFi.Password != "newpassword" {
+		t.Fatalf("password = %q, want newpassword", cfg.WiFi.Password)
+	}
+	if strings.Contains(out.String(), "newpassword") {
+		t.Fatalf("password leaked to output:\n%s", out.String())
+	}
+	if !called(runner.Calls, "systemctl restart hostapd") {
+		t.Fatalf("access point was not applied: %#v", runner.Calls)
+	}
+}
+
+func testWiFiPaths(t *testing.T) config.Paths {
+	t.Helper()
+	dir := t.TempDir()
+	paths := config.NewPaths(dir)
+	paths.HostapdConf = filepath.Join(dir, "hostapd.conf")
+	paths.DnsmasqConf = filepath.Join(dir, "dnsmasq.conf")
+	paths.NftablesMainConf = filepath.Join(dir, "nftables.conf")
+	paths.NftablesConf = filepath.Join(dir, "router-manager.nft")
+	paths.SingBoxLocalConf = filepath.Join(dir, "sing-box.json")
+	cfg := config.DefaultConfig()
+	cfg.MiniPC.APInterface = "wlan1"
+	cfg.MiniPC.SSID = "OldAP"
+	cfg.WiFi.Password = "oldpassword"
+	if err := config.Save(paths, cfg); err != nil {
+		t.Fatal(err)
+	}
+	return paths
+}
+
+func testWiFiRunner() *shell.DryRunner {
+	return &shell.DryRunner{Outputs: map[string]string{
+		"iw dev": `
+phy#1
+	Interface wlan1
+		type managed
+`,
+		"iw list": `
+Wiphy phy1
+	Supported interface modes:
+		 * managed
+		 * AP
+	Band 1:
+		Capabilities: 0x19ef
+			HT20/HT40
+		Frequencies:
+			* 2412 MHz [1] (20.0 dBm)
+			* 2437 MHz [6] (20.0 dBm)
+			* 2462 MHz [11] (20.0 dBm)
+	Band 2:
+		VHT Capabilities (0x0)
+		Frequencies:
+			* 5180 MHz [36] (20.0 dBm)
+`,
+		"systemctl is-active hostapd": "active",
+		"systemctl is-active dnsmasq": "active",
+	}}
+}
+
+func called(calls []string, want string) bool {
+	for _, call := range calls {
+		if call == want {
+			return true
+		}
+	}
+	return false
+}
+
+func withStdin(t *testing.T, input string, fn func()) {
+	t.Helper()
+	old := os.Stdin
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	os.Stdin = r
+	defer func() {
+		os.Stdin = old
+		_ = r.Close()
+	}()
+	if _, err := w.WriteString(input); err != nil {
+		t.Fatal(err)
+	}
+	if err := w.Close(); err != nil {
+		t.Fatal(err)
+	}
+	fn()
 }

@@ -2,6 +2,7 @@ package tui
 
 import (
 	"context"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -34,6 +35,26 @@ func TestTUIForeignAddStartsForm(t *testing.T) {
 	}
 	if m.form.action != "foreign-add" || len(m.form.fields) != 5 {
 		t.Fatalf("unexpected form: %#v", m.form)
+	}
+}
+
+func TestTUIWiFiMenuHasSSIDAndPasswordActions(t *testing.T) {
+	m := testModel().run("menu:wifi")
+	actions := map[string]bool{}
+	for _, item := range m.items() {
+		actions[item.action] = true
+	}
+	for _, want := range []string{"wifi-ssid", "wifi-password"} {
+		if !actions[want] {
+			t.Fatalf("wifi menu missing action %q", want)
+		}
+	}
+}
+
+func TestTUIWiFiSSIDStartsPrompt(t *testing.T) {
+	m := testModel().run("wifi-ssid")
+	if m.mode != modePrompt || m.prompt.action != "wifi-ssid" {
+		t.Fatalf("unexpected prompt state: %#v", m.prompt)
 	}
 }
 
@@ -109,6 +130,46 @@ func TestTUIConfirmYesRunsActionInRussian(t *testing.T) {
 	}
 }
 
+func TestTUIWiFiSSIDPromptUpdatesConfig(t *testing.T) {
+	paths := testWiFiPaths(t)
+	m := testModelWithPaths(paths)
+	m.runner = testWiFiRunner()
+	m.requireRoot = func() error { return nil }
+
+	m = m.runPrompt("wifi-ssid", "NewAP")
+
+	cfg, err := config.Load(paths)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.MiniPC.SSID != "NewAP" {
+		t.Fatalf("SSID = %q, want NewAP", cfg.MiniPC.SSID)
+	}
+	if !strings.Contains(m.message, "Wi-Fi настройки применены") {
+		t.Fatalf("unexpected message: %q", m.message)
+	}
+}
+
+func TestTUIWiFiPasswordPromptUpdatesConfig(t *testing.T) {
+	paths := testWiFiPaths(t)
+	m := testModelWithPaths(paths)
+	m.runner = testWiFiRunner()
+	m.requireRoot = func() error { return nil }
+
+	m = m.runPrompt("wifi-password", "newpassword")
+
+	cfg, err := config.Load(paths)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.WiFi.Password != "newpassword" {
+		t.Fatalf("password = %q, want newpassword", cfg.WiFi.Password)
+	}
+	if strings.Contains(m.message, "newpassword") {
+		t.Fatalf("password leaked to message: %q", m.message)
+	}
+}
+
 func testModel() model {
 	return testModelWithPaths(config.NewPaths("/tmp/router-manager-tui-test"))
 }
@@ -128,4 +189,52 @@ func typeConfirmInput(m model, value string) model {
 		m = m.updateConfirm(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{r}})
 	}
 	return m
+}
+
+func testWiFiPaths(t *testing.T) config.Paths {
+	t.Helper()
+	dir := t.TempDir()
+	paths := config.NewPaths(dir)
+	paths.HostapdConf = filepath.Join(dir, "hostapd.conf")
+	paths.DnsmasqConf = filepath.Join(dir, "dnsmasq.conf")
+	paths.NftablesMainConf = filepath.Join(dir, "nftables.conf")
+	paths.NftablesConf = filepath.Join(dir, "router-manager.nft")
+	paths.SingBoxLocalConf = filepath.Join(dir, "sing-box.json")
+	cfg := config.DefaultConfig()
+	cfg.MiniPC.APInterface = "wlan1"
+	cfg.MiniPC.SSID = "OldAP"
+	cfg.WiFi.Password = "oldpassword"
+	if err := config.Save(paths, cfg); err != nil {
+		t.Fatal(err)
+	}
+	return paths
+}
+
+func testWiFiRunner() *shell.DryRunner {
+	return &shell.DryRunner{Outputs: map[string]string{
+		"iw dev": `
+phy#1
+	Interface wlan1
+		type managed
+`,
+		"iw list": `
+Wiphy phy1
+	Supported interface modes:
+		 * managed
+		 * AP
+	Band 1:
+		Capabilities: 0x19ef
+			HT20/HT40
+		Frequencies:
+			* 2412 MHz [1] (20.0 dBm)
+			* 2437 MHz [6] (20.0 dBm)
+			* 2462 MHz [11] (20.0 dBm)
+	Band 2:
+		VHT Capabilities (0x0)
+		Frequencies:
+			* 5180 MHz [36] (20.0 dBm)
+`,
+		"systemctl is-active hostapd": "active",
+		"systemctl is-active dnsmasq": "active",
+	}}
 }

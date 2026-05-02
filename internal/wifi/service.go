@@ -44,6 +44,29 @@ type SwitchResult struct {
 	Recommendation Recommendation
 }
 
+func ValidateSSID(ssid string) error {
+	if strings.TrimSpace(ssid) == "" {
+		return fmt.Errorf("SSID Wi-Fi сети не может быть пустым")
+	}
+	if strings.ContainsAny(ssid, "\r\n") {
+		return fmt.Errorf("SSID Wi-Fi сети не может содержать переносы строк")
+	}
+	if len([]byte(ssid)) > 32 {
+		return fmt.Errorf("SSID Wi-Fi сети должен быть не длиннее 32 байт")
+	}
+	return nil
+}
+
+func ValidatePassword(password string) error {
+	if len(password) < 8 || len(password) > 63 {
+		return fmt.Errorf("пароль Wi-Fi должен быть от 8 до 63 символов")
+	}
+	if strings.ContainsAny(password, "\r\n") {
+		return fmt.Errorf("пароль Wi-Fi не может содержать переносы строк")
+	}
+	return nil
+}
+
 func RenderHostapd(cfg config.Config) ([]byte, error) {
 	width := 0
 	if cfg.WiFi.ChannelWidth >= 80 {

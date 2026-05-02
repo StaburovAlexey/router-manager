@@ -37,6 +37,7 @@ type Options struct {
 	Version      string
 	Paths        config.Paths
 	Runner       shell.Runner
+	RequireRoot  func() error
 	RunBootstrap func(context.Context, io.Writer) error
 	RunSetup     func(context.Context, io.Reader, io.Writer) error
 }
@@ -44,6 +45,9 @@ type Options struct {
 func NewRoot(opts Options) *cobra.Command {
 	if opts.Runner == nil {
 		opts.Runner = shell.RealRunner{}
+	}
+	if opts.RequireRoot == nil {
+		opts.RequireRoot = system.RequireRoot
 	}
 	if opts.RunBootstrap == nil {
 		opts.RunBootstrap = func(ctx context.Context, out io.Writer) error {
@@ -601,6 +605,8 @@ func wifiCmd(ctx context.Context, opts Options) *cobra.Command {
 	cmd.AddCommand(wifiSetBandCmd(ctx, opts))
 	cmd.AddCommand(wifiSetChannelCmd(ctx, opts))
 	cmd.AddCommand(wifiSetWidthCmd(ctx, opts))
+	cmd.AddCommand(wifiSetSSIDCmd(ctx, opts))
+	cmd.AddCommand(wifiSetPasswordCmd(ctx, opts))
 	cmd.AddCommand(wifiAdaptersCmd(ctx, opts))
 	cmd.AddCommand(wifiSetAdapterCmd(ctx, opts))
 	cmd.AddCommand(&cobra.Command{
@@ -769,8 +775,45 @@ func wifiSetWidthCmd(ctx context.Context, opts Options) *cobra.Command {
 	}
 }
 
+func wifiSetSSIDCmd(ctx context.Context, opts Options) *cobra.Command {
+	return &cobra.Command{
+		Use:   "set-ssid <ssid>",
+		Short: "Изменить название Wi-Fi сети",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			ssid := strings.TrimSpace(args[0])
+			return updateWiFi(ctx, opts, cmd, func(cfg *config.Config) error {
+				if err := wifi.ValidateSSID(ssid); err != nil {
+					return err
+				}
+				cfg.MiniPC.SSID = ssid
+				return nil
+			})
+		},
+	}
+}
+
+func wifiSetPasswordCmd(ctx context.Context, opts Options) *cobra.Command {
+	return &cobra.Command{
+		Use:   "set-password",
+		Short: "Изменить пароль Wi-Fi сети",
+		Args:  cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			reader := bufio.NewReader(os.Stdin)
+			password := prompt(reader, cmd.OutOrStdout(), "Новый пароль Wi-Fi", "")
+			return updateWiFi(ctx, opts, cmd, func(cfg *config.Config) error {
+				if err := wifi.ValidatePassword(password); err != nil {
+					return err
+				}
+				cfg.WiFi.Password = password
+				return nil
+			})
+		},
+	}
+}
+
 func updateWiFi(ctx context.Context, opts Options, cmd *cobra.Command, mutate func(*config.Config) error) error {
-	if err := system.RequireRoot(); err != nil {
+	if err := opts.RequireRoot(); err != nil {
 		return err
 	}
 	fmt.Fprintln(cmd.OutOrStdout(), "Внимание: изменение настроек перезапустит Wi-Fi точку доступа.")

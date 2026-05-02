@@ -10,6 +10,32 @@ import (
 	"router-manager/internal/shell"
 )
 
+func TestValidateSSID(t *testing.T) {
+	for _, value := range []string{"TestAP", strings.Repeat("a", 32)} {
+		if err := ValidateSSID(value); err != nil {
+			t.Fatalf("ValidateSSID(%q): %v", value, err)
+		}
+	}
+	for _, value := range []string{"", "   ", strings.Repeat("a", 33), "bad\nssid"} {
+		if err := ValidateSSID(value); err == nil {
+			t.Fatalf("ValidateSSID(%q) succeeded, want error", value)
+		}
+	}
+}
+
+func TestValidatePassword(t *testing.T) {
+	for _, value := range []string{"password", strings.Repeat("a", 63)} {
+		if err := ValidatePassword(value); err != nil {
+			t.Fatalf("ValidatePassword(%q): %v", value, err)
+		}
+	}
+	for _, value := range []string{"short", strings.Repeat("a", 64), "bad\npassword"} {
+		if err := ValidatePassword(value); err == nil {
+			t.Fatalf("ValidatePassword(%q) succeeded, want error", value)
+		}
+	}
+}
+
 func TestSwitchAccessPointAppliesRecommendationAndReleasesOldAdapter(t *testing.T) {
 	paths := testWiFiPaths(t)
 	cfg := config.DefaultConfig()
