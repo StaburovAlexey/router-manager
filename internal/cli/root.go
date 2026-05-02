@@ -34,14 +34,26 @@ import (
 )
 
 type Options struct {
-	Version string
-	Paths   config.Paths
-	Runner  shell.Runner
+	Version      string
+	Paths        config.Paths
+	Runner       shell.Runner
+	RunBootstrap func(context.Context, io.Writer) error
+	RunSetup     func(context.Context, io.Reader, io.Writer) error
 }
 
 func NewRoot(opts Options) *cobra.Command {
 	if opts.Runner == nil {
 		opts.Runner = shell.RealRunner{}
+	}
+	if opts.RunBootstrap == nil {
+		opts.RunBootstrap = func(ctx context.Context, out io.Writer) error {
+			return (bootstrap.Service{Paths: opts.Paths, Runner: opts.Runner, Stdout: out}).Run(ctx)
+		}
+	}
+	if opts.RunSetup == nil {
+		opts.RunSetup = func(ctx context.Context, in io.Reader, out io.Writer) error {
+			return (setup.Service{Paths: opts.Paths, Runner: opts.Runner, In: in, Out: out}).Run(ctx)
+		}
 	}
 	ctx := context.Background()
 	root := &cobra.Command{
@@ -57,10 +69,10 @@ func NewRoot(opts Options) *cobra.Command {
 				} else {
 					fmt.Fprintln(cmd.OutOrStdout(), "Настройка ещё не завершена: продолжу мастер с уже сохранёнными значениями.")
 				}
-				if err := (bootstrap.Service{Paths: opts.Paths, Runner: opts.Runner, Stdout: cmd.OutOrStdout()}).Run(ctx); err != nil {
-					return err
+				if err := opts.RunBootstrap(ctx, cmd.OutOrStdout()); err != nil {
+					return bootstrapSetupError(err)
 				}
-				return (setup.Service{Paths: opts.Paths, Runner: opts.Runner, In: os.Stdin, Out: cmd.OutOrStdout()}).Run(ctx)
+				return opts.RunSetup(ctx, os.Stdin, cmd.OutOrStdout())
 			}
 			return tui.Run(ctx, opts.Paths, opts.Runner, opts.Version)
 		},
@@ -84,6 +96,16 @@ func NewRoot(opts Options) *cobra.Command {
 	root.AddCommand(commands...)
 	root.AddCommand(ruCmd(ctx, opts), foreignCmd(ctx, opts), wifiCmd(ctx, opts))
 	return root
+}
+
+func bootstrapSetupError(err error) error {
+	return fmt.Errorf(
+		"подготовка системы не завершена. "+
+			"Часть зависимостей или файлов могла уже быть создана; это нормально для повторного запуска. "+
+			"Исправьте причину ошибки и снова выполните sudo router-manager. "+
+			"Если нужна ручная очистка локальных данных приложения и команда router-manager уже доступна, используйте sudo router-manager uninstall --keep-deps: %w",
+		err,
+	)
 }
 
 func updateCmd(ctx context.Context, opts Options) *cobra.Command {

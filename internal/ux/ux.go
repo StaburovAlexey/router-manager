@@ -28,6 +28,12 @@ func FriendlyError(err error) string {
 func actionsFor(text string) []string {
 	lower := strings.ToLower(text)
 	switch {
+	case strings.Contains(lower, "подготовка системы не завершена"):
+		return []string{
+			"исправьте исходную причину ошибки выше",
+			"запустите подготовку снова: sudo router-manager",
+			"если нужна ручная очистка локальных данных и команда router-manager уже доступна: sudo router-manager uninstall --keep-deps",
+		}
 	case strings.Contains(lower, "root") || strings.Contains(lower, "sudo"):
 		return []string{"запустите приложение с правами администратора: sudo router-manager"}
 	case strings.Contains(lower, "qr-ссылка") || strings.Contains(lower, "client-link"):

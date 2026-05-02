@@ -1,6 +1,11 @@
 package cli
 
 import (
+	"bytes"
+	"context"
+	"errors"
+	"io"
+	"strings"
 	"testing"
 
 	"router-manager/internal/config"
@@ -52,5 +57,67 @@ func TestShouldRunInitialSetupWhenConfigured(t *testing.T) {
 	}
 	if shouldRunInitialSetup(paths) {
 		t.Fatal("complete config must not trigger initial setup")
+	}
+}
+
+func TestInitialSetupBootstrapFailureHasRecoveryGuidance(t *testing.T) {
+	var setupCalled bool
+	root := NewRoot(Options{
+		Paths:  config.NewPaths(t.TempDir()),
+		Runner: &shell.DryRunner{},
+		RunBootstrap: func(_ context.Context, _ io.Writer) error {
+			return errors.New("apt install failed")
+		},
+		RunSetup: func(_ context.Context, _ io.Reader, _ io.Writer) error {
+			setupCalled = true
+			return nil
+		},
+	})
+	var out bytes.Buffer
+	root.SetOut(&out)
+	root.SetArgs([]string{})
+
+	err := root.Execute()
+	if err == nil {
+		t.Fatal("expected bootstrap error")
+	}
+	if setupCalled {
+		t.Fatal("setup must not run after bootstrap failure")
+	}
+	if !strings.Contains(err.Error(), "подготовка системы не завершена") {
+		t.Fatalf("missing recovery context: %v", err)
+	}
+	if !strings.Contains(err.Error(), "sudo router-manager") {
+		t.Fatalf("missing rerun guidance: %v", err)
+	}
+	if !strings.Contains(err.Error(), "apt install failed") {
+		t.Fatalf("missing original cause: %v", err)
+	}
+	if !strings.Contains(out.String(), "Первый запуск") {
+		t.Fatalf("missing first-run notice: %q", out.String())
+	}
+}
+
+func TestInitialSetupRunsSetupAfterBootstrap(t *testing.T) {
+	var calls []string
+	root := NewRoot(Options{
+		Paths:  config.NewPaths(t.TempDir()),
+		Runner: &shell.DryRunner{},
+		RunBootstrap: func(_ context.Context, _ io.Writer) error {
+			calls = append(calls, "bootstrap")
+			return nil
+		},
+		RunSetup: func(_ context.Context, _ io.Reader, _ io.Writer) error {
+			calls = append(calls, "setup")
+			return nil
+		},
+	})
+	root.SetArgs([]string{})
+
+	if err := root.Execute(); err != nil {
+		t.Fatal(err)
+	}
+	if strings.Join(calls, ",") != "bootstrap,setup" {
+		t.Fatalf("unexpected calls: %v", calls)
 	}
 }
