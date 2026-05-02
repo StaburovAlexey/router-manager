@@ -169,7 +169,7 @@ func (s Service) applyRemoteConfig(ctx context.Context, target sshclient.Target,
 	if err != nil {
 		return err
 	}
-	return singbox.ApplyRemoteConfig(ctx, s.SSH, target, data)
+	return singbox.ApplyRemoteConfig(ctx, s.SSH, target, data, server.TunnelPort)
 }
 
 func (s Service) RefreshRU(ctx context.Context, servers config.ForeignServers, selected string) error {

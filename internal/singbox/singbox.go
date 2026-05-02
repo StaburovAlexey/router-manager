@@ -61,7 +61,10 @@ func Status(ctx context.Context, runner shell.Runner) string {
 	return system.ServiceStatus(ctx, runner, Service)
 }
 
-func ApplyRemoteConfig(ctx context.Context, ssh sshclient.Client, target sshclient.Target, contents []byte) error {
+func ApplyRemoteConfig(ctx context.Context, ssh sshclient.Client, target sshclient.Target, contents []byte, listenPort int) error {
+	if err := CheckRemoteListenPort(ctx, ssh, target, listenPort); err != nil {
+		return err
+	}
 	encoded := base64.StdEncoding.EncodeToString(contents)
 	command := fmt.Sprintf(`set -eu
 if ! command -v sing-box >/dev/null 2>&1; then
@@ -82,6 +85,37 @@ systemctl enable sing-box >/dev/null 2>&1 || true
 systemctl restart sing-box`, encoded)
 	_, err := ssh.Run(ctx, target, command)
 	return err
+}
+
+func CheckRemoteListenPort(ctx context.Context, ssh sshclient.Client, target sshclient.Target, listenPort int) error {
+	if listenPort <= 0 {
+		return fmt.Errorf("порт подключения не настроен")
+	}
+	command := fmt.Sprintf(`set -eu
+port=%d
+if ! command -v ss >/dev/null 2>&1; then
+  echo "команда ss не найдена на удалённом сервере; установите iproute2 или проверьте порт подключения $port вручную." >&2
+  exit 127
+fi
+listeners="$(ss -H -ltnp "sport = :$port" 2>/dev/null || true)"
+if [ -n "$listeners" ]; then
+  main_pid="$(systemctl show -p MainPID --value sing-box 2>/dev/null || true)"
+  if [ -n "$main_pid" ] && [ "$main_pid" != "0" ]; then
+    busy="$(printf '%%s\n' "$listeners" | grep -v "pid=${main_pid}," || true)"
+  else
+    busy="$listeners"
+  fi
+  if [ -n "$busy" ]; then
+    echo "порт подключения $port уже занят на сервере:" >&2
+    printf '%%s\n' "$busy" >&2
+    echo "Освободите порт или выберите другой порт подключения." >&2
+    exit 98
+  fi
+fi`, listenPort)
+	if _, err := ssh.Run(ctx, target, command); err != nil {
+		return fmt.Errorf("порт подключения %d не прошёл проверку на сервере: %w", listenPort, err)
+	}
+	return nil
 }
 
 func (i Installer) EnsureRemoteInstalled(ctx context.Context, ssh sshclient.Client, target sshclient.Target) error {
@@ -143,7 +177,7 @@ func ApplyRemoteRU(ctx context.Context, ssh sshclient.Client, target sshclient.T
 	if err != nil {
 		return err
 	}
-	if err := ApplyRemoteConfig(ctx, ssh, target, data); err != nil {
+	if err := ApplyRemoteConfig(ctx, ssh, target, data, cfg.RUServer.TunnelPort); err != nil {
 		return err
 	}
 	mode := "auto"
