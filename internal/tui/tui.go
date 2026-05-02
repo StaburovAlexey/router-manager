@@ -393,8 +393,8 @@ func (m model) items() []item {
 		return []item{
 			{"Статус входного сервера", "ru-status"},
 			{"Автоматически выбирать выходной сервер", "ru-auto"},
-			{"Выбрать выходной сервер вручную", "ru-use"},
-			{"Проверить выходной сервер", "ru-test"},
+			{"Выбрать выходной сервер вручную", "menu:foreign-switch"},
+			{"Проверить выходной сервер", "menu:foreign-test"},
 			{"Показать выходные серверы", "foreign-list"},
 			{"Логи входного сервера", "ru-logs"},
 			{"Откатить конфиг входного сервера", "ru-rollback"},
@@ -412,6 +412,8 @@ func (m model) items() []item {
 		}
 	case "foreign-switch":
 		return m.foreignSwitchItems()
+	case "foreign-test":
+		return m.foreignTestItems()
 	case "wifi":
 		return []item{
 			{"Показать Wi-Fi настройки", "wifi-status"},
@@ -490,6 +492,8 @@ func (m model) menuTitle() string {
 		return "выходные серверы"
 	case "foreign-switch":
 		return "выбор выходного сервера"
+	case "foreign-test":
+		return "проверка выходного сервера"
 	case "wifi":
 		return "Wi-Fi"
 	case "wifi-adapter":
@@ -551,6 +555,11 @@ func (m model) run(action string) model {
 		err := m.ruService().Use(m.ctx, name)
 		return m.withResult(fmt.Sprintf("Входной сервер переключён на %s.", name), err).setMenu("foreign")
 	}
+	if strings.HasPrefix(action, "ru-test:") {
+		name := strings.TrimPrefix(action, "ru-test:")
+		err := m.ruService().Test(m.ctx, name)
+		return m.withResult("Проверка успешна.", err)
+	}
 
 	switch action {
 	case "status", "diagnostics":
@@ -588,9 +597,9 @@ func (m model) run(action string) model {
 		err := m.ruService().Auto(m.ctx)
 		return m.withResult("Автоматический выбор выходного сервера включён.", err)
 	case "ru-use":
-		return m.startPrompt("Выбрать выходной сервер", "Имя выходного сервера", m.firstForeignName(), "ru-use")
+		return m.setMenu("foreign-switch")
 	case "ru-test":
-		return m.startPrompt("Проверить выходной сервер", "Имя выходного сервера", m.firstForeignName(), "ru-test")
+		return m.setMenu("foreign-test")
 	case "ru-logs":
 		out, err := m.ruService().Logs(m.ctx)
 		return m.withResult(out, err)
@@ -914,6 +923,18 @@ func (m model) showForeignList() model {
 }
 
 func (m model) foreignSwitchItems() []item {
+	return m.foreignServerItems("ru-use", func(server config.ForeignServer) string {
+		return fmt.Sprintf("%s -> %s:%d", server.Name, server.IP, server.TunnelPort)
+	})
+}
+
+func (m model) foreignTestItems() []item {
+	return m.foreignServerItems("ru-test", func(server config.ForeignServer) string {
+		return fmt.Sprintf("%s SSH %s@%s:%d", server.Name, server.SSHUser, server.IP, server.SSHPort)
+	})
+}
+
+func (m model) foreignServerItems(actionPrefix string, title func(config.ForeignServer) string) []item {
 	servers, err := config.LoadForeign(m.paths)
 	if err != nil || len(servers.Servers) == 0 {
 		return []item{{"Выходные серверы не добавлены", "foreign-list"}, {"Назад", "back"}}
@@ -921,8 +942,8 @@ func (m model) foreignSwitchItems() []item {
 	items := make([]item, 0, len(servers.Servers)+1)
 	for _, server := range servers.Servers {
 		items = append(items, item{
-			title:  fmt.Sprintf("%s -> %s:%d", server.Name, server.IP, server.TunnelPort),
-			action: "ru-use:" + server.Name,
+			title:  title(server),
+			action: actionPrefix + ":" + server.Name,
 		})
 	}
 	items = append(items, item{"Назад", "back"})

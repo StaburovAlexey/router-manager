@@ -38,6 +38,45 @@ func TestTUIForeignAddStartsForm(t *testing.T) {
 	}
 }
 
+func TestTUIRUServerUseStartsForeignServerList(t *testing.T) {
+	paths := testForeignServerPaths(t)
+	m := testModelWithPaths(paths).run("menu:ru")
+	m = m.run(menuAction(t, m.items(), "Выбрать выходной сервер вручную"))
+	if m.mode != modeMenu || m.menu != "foreign-switch" {
+		t.Fatalf("unexpected state: mode=%q menu=%q", m.mode, m.menu)
+	}
+}
+
+func TestTUIRUServerTestStartsForeignServerList(t *testing.T) {
+	paths := testForeignServerPaths(t)
+	m := testModelWithPaths(paths).run("menu:ru")
+	m = m.run(menuAction(t, m.items(), "Проверить выходной сервер"))
+	if m.mode != modeMenu || m.menu != "foreign-test" {
+		t.Fatalf("unexpected state: mode=%q menu=%q", m.mode, m.menu)
+	}
+}
+
+func TestTUIForeignSwitchItemsUseServerActions(t *testing.T) {
+	paths := testForeignServerPaths(t)
+	items := testModelWithPaths(paths).setMenu("foreign-switch").items()
+	assertMenuItem(t, items, "de-1 -> 203.0.113.10:8443", "ru-use:de-1")
+	assertMenuItem(t, items, "nl-1 -> 203.0.113.20:9443", "ru-use:nl-1")
+}
+
+func TestTUIForeignTestItemsUseServerActions(t *testing.T) {
+	paths := testForeignServerPaths(t)
+	items := testModelWithPaths(paths).setMenu("foreign-test").items()
+	assertMenuItem(t, items, "de-1 SSH root@203.0.113.10:22", "ru-test:de-1")
+	assertMenuItem(t, items, "nl-1 SSH admin@203.0.113.20:2222", "ru-test:nl-1")
+}
+
+func TestTUIForeignServerItemsShowsEmptyState(t *testing.T) {
+	paths := config.NewPaths(t.TempDir())
+	items := testModelWithPaths(paths).setMenu("foreign-test").items()
+	assertMenuItem(t, items, "Выходные серверы не добавлены", "foreign-list")
+	assertMenuItem(t, items, "Назад", "back")
+}
+
 func TestTUIWiFiMenuHasSSIDAndPasswordActions(t *testing.T) {
 	m := testModel().run("menu:wifi")
 	actions := map[string]bool{}
@@ -189,6 +228,39 @@ func typeConfirmInput(m model, value string) model {
 		m = m.updateConfirm(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{r}})
 	}
 	return m
+}
+
+func testForeignServerPaths(t *testing.T) config.Paths {
+	t.Helper()
+	paths := config.NewPaths(t.TempDir())
+	if err := config.SaveForeign(paths, config.ForeignServers{Servers: []config.ForeignServer{
+		{Name: "de-1", IP: "203.0.113.10", SSHUser: "root", SSHPort: 22, TunnelPort: 8443},
+		{Name: "nl-1", IP: "203.0.113.20", SSHUser: "admin", SSHPort: 2222, TunnelPort: 9443},
+	}}); err != nil {
+		t.Fatal(err)
+	}
+	return paths
+}
+
+func assertMenuItem(t *testing.T, items []item, title string, action string) {
+	t.Helper()
+	for _, item := range items {
+		if item.title == title && item.action == action {
+			return
+		}
+	}
+	t.Fatalf("menu item %q with action %q not found in %#v", title, action, items)
+}
+
+func menuAction(t *testing.T, items []item, title string) string {
+	t.Helper()
+	for _, item := range items {
+		if item.title == title {
+			return item.action
+		}
+	}
+	t.Fatalf("menu item %q not found in %#v", title, items)
+	return ""
 }
 
 func testWiFiPaths(t *testing.T) config.Paths {
