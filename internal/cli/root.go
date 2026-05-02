@@ -86,6 +86,7 @@ func NewRoot(opts Options) *cobra.Command {
 		bootstrapCmd(ctx, opts),
 		setupCmd(ctx, opts),
 		tunnelCmd(ctx, opts),
+		selectiveCmd(ctx, opts),
 		directCmd(ctx, opts),
 		statusCmd(ctx, opts),
 		reportCmd(ctx, opts),
@@ -209,12 +210,26 @@ func setupCmd(ctx context.Context, opts Options) *cobra.Command {
 func tunnelCmd(ctx context.Context, opts Options) *cobra.Command {
 	return &cobra.Command{
 		Use:   "tunnel",
-		Short: "Включить маршрут через сервер",
+		Short: "Весь трафик через VPN, исключения напрямую",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if err := modes.EnableTunnel(ctx, opts.Runner, opts.Paths); err != nil {
 				return err
 			}
-			fmt.Fprintln(cmd.OutOrStdout(), "Режим маршрутизации включён.")
+			fmt.Fprintln(cmd.OutOrStdout(), "Весь трафик через VPN включён.")
+			return nil
+		},
+	}
+}
+
+func selectiveCmd(ctx context.Context, opts Options) *cobra.Command {
+	return &cobra.Command{
+		Use:   "selective",
+		Short: "Прямой интернет, выбранные сайты через VPN",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			if err := modes.EnableSelective(ctx, opts.Runner, opts.Paths); err != nil {
+				return err
+			}
+			fmt.Fprintln(cmd.OutOrStdout(), "Прямой интернет с выбранными сайтами через VPN включён.")
 			return nil
 		},
 	}
@@ -223,12 +238,12 @@ func tunnelCmd(ctx context.Context, opts Options) *cobra.Command {
 func directCmd(ctx context.Context, opts Options) *cobra.Command {
 	return &cobra.Command{
 		Use:   "direct",
-		Short: "Отключить маршрут через сервер и включить прямой интернет",
+		Short: "Полностью прямой интернет без VPN",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if err := modes.EnableDirect(ctx, opts.Runner, opts.Paths); err != nil {
 				return err
 			}
-			fmt.Fprintln(cmd.OutOrStdout(), "Прямой интернет включён.")
+			fmt.Fprintln(cmd.OutOrStdout(), "Полностью прямой интернет включён.")
 			return nil
 		},
 	}
@@ -313,25 +328,66 @@ func qrCmd(ctx context.Context, opts Options) *cobra.Command {
 	}
 }
 
+type ruleSetCommandSpec struct {
+	prefix         string
+	path           string
+	title          string
+	addShort       string
+	removeShort    string
+	listShort      string
+	editShort      string
+	addedMessage   string
+	removedMessage string
+}
+
 func directRulesCommands(ctx context.Context, opts Options) []*cobra.Command {
+	commands := ruleSetCommands(ctx, opts, ruleSetCommandSpec{
+		prefix:         "direct",
+		path:           opts.Paths.CustomDirect,
+		title:          "Сайты и адреса прямого доступа",
+		addShort:       "Добавить сайт или адрес прямого доступа",
+		removeShort:    "Удалить правило прямого доступа",
+		listShort:      "Показать сайты и адреса прямого доступа",
+		editShort:      "Открыть custom-direct.json в редакторе",
+		addedMessage:   "Правило прямого доступа добавлено",
+		removedMessage: "Правило удалено.",
+	})
+	commands = append(commands, ruleSetCommands(ctx, opts, ruleSetCommandSpec{
+		prefix:         "proxy",
+		path:           opts.Paths.CustomProxy,
+		title:          "Сайты и адреса через VPN",
+		addShort:       "Добавить сайт или адрес через VPN",
+		removeShort:    "Удалить правило через VPN",
+		listShort:      "Показать сайты и адреса через VPN",
+		editShort:      "Открыть custom-proxy.json в редакторе",
+		addedMessage:   "Правило через VPN добавлено",
+		removedMessage: "Правило удалено.",
+	})...)
+	return commands
+}
+
+func ruleSetCommands(ctx context.Context, opts Options, spec ruleSetCommandSpec) []*cobra.Command {
 	add := &cobra.Command{
-		Use:   "direct-add <site|domain|suffix|ip|cidr> <value>",
-		Short: "Добавить сайт или адрес прямого доступа",
+		Use:   spec.prefix + "-add <site|domain|suffix|ip|cidr> <value>",
+		Short: spec.addShort,
 		Args:  cobra.ExactArgs(2),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if err := system.RequireRoot(); err != nil {
 				return err
 			}
-			if _, err := system.BackupFile(opts.Paths.CustomDirect, opts.Paths.BackupsDir); err != nil {
+			if err := rules.EnsureDefaultPath(spec.path); err != nil {
+				return err
+			}
+			if _, err := system.BackupFile(spec.path, opts.Paths.BackupsDir); err != nil {
 				return err
 			}
 			value := ""
 			var err error
 			switch args[0] {
 			case "site", "auto":
-				_, value, err = rules.AddAuto(opts.Paths.CustomDirect, args[1])
+				_, value, err = rules.AddAuto(spec.path, args[1])
 			default:
-				value, err = rules.Add(opts.Paths.CustomDirect, args[0], args[1])
+				value, err = rules.Add(spec.path, args[0], args[1])
 			}
 			if err != nil {
 				return err
@@ -339,22 +395,25 @@ func directRulesCommands(ctx context.Context, opts Options) []*cobra.Command {
 			if err := rules.AfterChange(ctx, opts.Runner, opts.Paths); err != nil {
 				return err
 			}
-			fmt.Fprintf(cmd.OutOrStdout(), "Правило добавлено: %s\n", value)
+			fmt.Fprintf(cmd.OutOrStdout(), "%s: %s\n", spec.addedMessage, value)
 			return nil
 		},
 	}
 	remove := &cobra.Command{
-		Use:   "direct-remove <value>",
-		Short: "Удалить правило прямого доступа",
+		Use:   spec.prefix + "-remove <value>",
+		Short: spec.removeShort,
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if err := system.RequireRoot(); err != nil {
 				return err
 			}
-			if _, err := system.BackupFile(opts.Paths.CustomDirect, opts.Paths.BackupsDir); err != nil {
+			if err := rules.EnsureDefaultPath(spec.path); err != nil {
 				return err
 			}
-			removed, err := rules.Remove(opts.Paths.CustomDirect, args[0])
+			if _, err := system.BackupFile(spec.path, opts.Paths.BackupsDir); err != nil {
+				return err
+			}
+			removed, err := rules.Remove(spec.path, args[0])
 			if err != nil {
 				return err
 			}
@@ -364,21 +423,21 @@ func directRulesCommands(ctx context.Context, opts Options) []*cobra.Command {
 			if err := rules.AfterChange(ctx, opts.Runner, opts.Paths); err != nil {
 				return err
 			}
-			fmt.Fprintln(cmd.OutOrStdout(), "Правило удалено.")
+			fmt.Fprintln(cmd.OutOrStdout(), spec.removedMessage)
 			return nil
 		},
 	}
 	list := &cobra.Command{
-		Use:   "direct-list",
-		Short: "Показать сайты и адреса прямого доступа",
+		Use:   spec.prefix + "-list",
+		Short: spec.listShort,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			set, err := rules.Load(opts.Paths.CustomDirect)
+			set, err := rules.Load(spec.path)
 			if err != nil {
 				return err
 			}
 			asJSON, _ := cmd.Flags().GetBool("json")
 			if !asJSON {
-				fmt.Fprintln(cmd.OutOrStdout(), rules.FormatHuman(set))
+				fmt.Fprintln(cmd.OutOrStdout(), rules.FormatHumanWithTitle(set, spec.title))
 				return nil
 			}
 			data, _ := json.MarshalIndent(set, "", "  ")
@@ -388,16 +447,19 @@ func directRulesCommands(ctx context.Context, opts Options) []*cobra.Command {
 	}
 	list.Flags().Bool("json", false, "показать исходный JSON rule-set")
 	edit := &cobra.Command{
-		Use:   "direct-edit",
-		Short: "Открыть custom-direct.json в редакторе",
+		Use:   spec.prefix + "-edit",
+		Short: spec.editShort,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if err := system.RequireRoot(); err != nil {
 				return err
 			}
-			if _, err := system.BackupFile(opts.Paths.CustomDirect, opts.Paths.BackupsDir); err != nil {
+			if err := rules.EnsureDefaultPath(spec.path); err != nil {
 				return err
 			}
-			if err := rules.Edit(ctx, opts.Paths.CustomDirect); err != nil {
+			if _, err := system.BackupFile(spec.path, opts.Paths.BackupsDir); err != nil {
+				return err
+			}
+			if err := rules.Edit(ctx, spec.path); err != nil {
 				return err
 			}
 			if err := rules.AfterChange(ctx, opts.Runner, opts.Paths); err != nil {

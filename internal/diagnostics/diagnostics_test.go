@@ -25,7 +25,7 @@ func TestDiagnosticsReportsDisabledIPv4Forwarding(t *testing.T) {
 	if !strings.Contains(out, "Маршрут: ошибка: IPv4 forwarding выключен") {
 		t.Fatalf("route summary must fail when forwarding is disabled:\n%s", out)
 	}
-	if !strings.Contains(out, "sudo router-manager tunnel или sudo router-manager direct") {
+	if !strings.Contains(out, "sudo router-manager tunnel, sudo router-manager selective или sudo router-manager direct") {
 		t.Fatalf("missing forwarding recommendation:\n%s", out)
 	}
 }
@@ -43,7 +43,7 @@ func TestDiagnosticsAcceptsEnabledIPv4Forwarding(t *testing.T) {
 	if !strings.Contains(out, "IPv4 forwarding: ok") {
 		t.Fatalf("missing forwarding ok detail:\n%s", out)
 	}
-	if !strings.Contains(out, "Маршрут: включён") {
+	if !strings.Contains(out, "Маршрут: весь трафик через VPN") {
 		t.Fatalf("route summary should be enabled:\n%s", out)
 	}
 	if strings.Contains(out, "IPv4 forwarding выключен") {

@@ -45,6 +45,22 @@ func TestRenderTunnelAllowsTunAndDropsDirectWAN(t *testing.T) {
 	}
 }
 
+func TestRenderSelectiveUsesTunnelFirewallShape(t *testing.T) {
+	text := renderForTest(t, "selective")
+	for _, want := range []string{
+		`iifname "wlan0" oifname "tun0" accept`,
+		`iifname "wlan0" ip daddr 203.0.113.10 accept`,
+		`iifname "wlan0" drop`,
+	} {
+		if !strings.Contains(text, want) {
+			t.Fatalf("selective nft config does not contain %q:\n%s", want, text)
+		}
+	}
+	if strings.Contains(text, `iifname "wlan0" accept`) {
+		t.Fatalf("selective config must not allow AP clients directly:\n%s", text)
+	}
+}
+
 func TestApplyDoesNotNeedWANInterface(t *testing.T) {
 	dir := t.TempDir()
 	paths := config.NewPaths(dir)

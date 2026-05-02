@@ -51,7 +51,7 @@ func actionsFor(text string) []string {
 	case strings.Contains(lower, "hostapd"):
 		return []string{"откройте Проблемы и диагностика -> Показать логи", "попробуйте Wi-Fi -> Перезапустить Wi-Fi"}
 	case strings.Contains(lower, "dnsmasq") || strings.Contains(lower, "dns"):
-		return []string{"откройте Проблемы и диагностика -> Показать логи", "попробуйте Интернет -> Отключить маршрут через сервер, затем Интернет -> Включить маршрут через сервер"}
+		return []string{"откройте Проблемы и диагностика -> Показать логи", "заново выберите нужный режим в меню Интернет"}
 	case strings.Contains(lower, "sing-box") || strings.Contains(lower, "tunnel"):
 		return []string{"откройте Проблемы и диагностика -> Показать логи", "проверьте доступность входного и выходного серверов"}
 	case strings.Contains(lower, "ssh"):

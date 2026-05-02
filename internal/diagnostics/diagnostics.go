@@ -145,11 +145,16 @@ func routeSummary(status Status) string {
 	switch status.Mode {
 	case "tunnel":
 		if status.SingBox == "active" {
-			return "включён"
+			return "весь трафик через VPN"
+		}
+		return "ошибка"
+	case "selective":
+		if status.SingBox == "active" {
+			return "прямой интернет, выбранные сайты через VPN"
 		}
 		return "ошибка"
 	case "direct":
-		return "выключен, прямой интернет"
+		return "полностью прямой интернет"
 	default:
 		return value(status.Mode)
 	}
@@ -176,11 +181,11 @@ func recommendations(status Status) []string {
 	if status.Dnsmasq != "active" {
 		result = append(result, "DHCP/DNS для Wi-Fi не запущен; проверьте логи dnsmasq")
 	}
-	if status.Mode == "tunnel" && status.SingBox != "active" {
+	if (status.Mode == "tunnel" || status.Mode == "selective") && status.SingBox != "active" {
 		result = append(result, "режим маршрутизации включён в настройках, но sing-box не запущен; откройте логи")
 	}
 	if status.IPv4Forwarding != "ok" {
-		result = append(result, "IPv4 forwarding выключен; включите режим маршрутизации заново: sudo router-manager tunnel или sudo router-manager direct")
+		result = append(result, "IPv4 forwarding выключен; включите режим маршрутизации заново: sudo router-manager tunnel, sudo router-manager selective или sudo router-manager direct")
 	}
 	if status.DNS != "ok" {
 		result = append(result, "DNS не отвечает; перезапустите режим маршрутизации или проверьте логи sing-box")
@@ -203,11 +208,11 @@ func nextActions(status Status) []string {
 		case strings.Contains(rec, "DHCP/DNS"):
 			result = append(result, "откройте Проблемы и диагностика -> Показать логи и проверьте dnsmasq")
 		case strings.Contains(rec, "sing-box"):
-			result = append(result, "откройте Проблемы и диагностика -> Показать логи; затем попробуйте Интернет -> Включить маршрут через сервер")
+			result = append(result, "откройте Проблемы и диагностика -> Показать логи; затем заново выберите нужный режим в меню Интернет")
 		case strings.Contains(rec, "IPv4 forwarding"):
-			result = append(result, "выполните sudo router-manager tunnel или sudo router-manager direct, чтобы заново применить сетевые настройки")
+			result = append(result, "выполните sudo router-manager tunnel, sudo router-manager selective или sudo router-manager direct, чтобы заново применить сетевые настройки")
 		case strings.Contains(rec, "DNS"):
-			result = append(result, "попробуйте Интернет -> Отключить маршрут через сервер, затем Интернет -> Включить маршрут через сервер")
+			result = append(result, "попробуйте заново выбрать нужный режим в меню Интернет")
 		default:
 			result = append(result, rec)
 		}

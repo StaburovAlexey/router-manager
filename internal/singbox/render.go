@@ -9,33 +9,90 @@ import (
 )
 
 type LocalTemplateData struct {
-	RUServerIP       string
-	RUServerPort     int
-	UUID             string
-	SNI              string
-	PublicKey        string
-	ShortID          string
-	CustomDirectPath string
-	LANCIDR          string
+	RUServerIP        string
+	RUServerPort      int
+	UUID              string
+	SNI               string
+	PublicKey         string
+	ShortID           string
+	DNSRuleSet        string
+	DNSRuleServer     string
+	DNSFinal          string
+	LANCIDR           string
+	RouteRuleSet      string
+	RouteRulePath     string
+	RouteRuleOutbound string
+	RouteFinal        string
 }
 
 func RenderLocal(cfg config.Config, paths config.Paths) ([]byte, error) {
+	return RenderLocalForMode(cfg, paths, "tunnel")
+}
+
+func RenderLocalForMode(cfg config.Config, paths config.Paths, mode string) ([]byte, error) {
 	if cfg.RUServer.IP == "" {
 		return nil, fmt.Errorf("входной сервер не настроен")
 	}
 	if cfg.Reality.UUID == "" || cfg.Reality.SNI == "" || cfg.Reality.PublicKey == "" || cfg.Reality.ShortID == "" {
 		return nil, fmt.Errorf("REALITY параметры входного сервера не настроены")
 	}
+	policy, err := localRoutingPolicy(paths, mode)
+	if err != nil {
+		return nil, err
+	}
 	return templates.Render("singbox-local.json.tmpl", LocalTemplateData{
-		RUServerIP:       cfg.RUServer.IP,
-		RUServerPort:     cfg.RUServer.TunnelPort,
-		UUID:             cfg.Reality.UUID,
-		SNI:              cfg.Reality.SNI,
-		PublicKey:        cfg.Reality.PublicKey,
-		ShortID:          cfg.Reality.ShortID,
-		CustomDirectPath: paths.CustomDirect,
-		LANCIDR:          cfg.MiniPC.LANCIDR,
+		RUServerIP:        cfg.RUServer.IP,
+		RUServerPort:      cfg.RUServer.TunnelPort,
+		UUID:              cfg.Reality.UUID,
+		SNI:               cfg.Reality.SNI,
+		PublicKey:         cfg.Reality.PublicKey,
+		ShortID:           cfg.Reality.ShortID,
+		DNSRuleSet:        policy.DNSRuleSet,
+		DNSRuleServer:     policy.DNSRuleServer,
+		DNSFinal:          policy.DNSFinal,
+		LANCIDR:           cfg.MiniPC.LANCIDR,
+		RouteRuleSet:      policy.RouteRuleSet,
+		RouteRulePath:     policy.RouteRulePath,
+		RouteRuleOutbound: policy.RouteRuleOutbound,
+		RouteFinal:        policy.RouteFinal,
 	})
+}
+
+type localRoutingPolicyData struct {
+	DNSRuleSet        string
+	DNSRuleServer     string
+	DNSFinal          string
+	RouteRuleSet      string
+	RouteRulePath     string
+	RouteRuleOutbound string
+	RouteFinal        string
+}
+
+func localRoutingPolicy(paths config.Paths, mode string) (localRoutingPolicyData, error) {
+	switch mode {
+	case "", "tunnel":
+		return localRoutingPolicyData{
+			DNSRuleSet:        "custom-direct",
+			DNSRuleServer:     "local",
+			DNSFinal:          "remote",
+			RouteRuleSet:      "custom-direct",
+			RouteRulePath:     paths.CustomDirect,
+			RouteRuleOutbound: "direct",
+			RouteFinal:        "proxy",
+		}, nil
+	case "selective":
+		return localRoutingPolicyData{
+			DNSRuleSet:        "custom-proxy",
+			DNSRuleServer:     "remote",
+			DNSFinal:          "local",
+			RouteRuleSet:      "custom-proxy",
+			RouteRulePath:     paths.CustomProxy,
+			RouteRuleOutbound: "proxy",
+			RouteFinal:        "direct",
+		}, nil
+	default:
+		return localRoutingPolicyData{}, fmt.Errorf("неизвестный режим локальной маршрутизации: %s", mode)
+	}
 }
 
 func RenderForeign(server config.ForeignServer, uuid string, privateKey string) ([]byte, error) {
@@ -123,7 +180,7 @@ func RenderRU(cfg config.Config, privateKey string, servers config.ForeignServer
 
 	payload := map[string]any{
 		"log": map[string]any{
-			"level":     "info",
+			"level":     "warn",
 			"timestamp": true,
 		},
 		"inbounds": []any{

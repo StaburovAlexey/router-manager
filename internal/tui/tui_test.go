@@ -77,6 +77,27 @@ func TestTUIForeignServerItemsShowsEmptyState(t *testing.T) {
 	assertMenuItem(t, items, "Назад", "back")
 }
 
+func TestTUIInternetMenuShowsThreeRoutingModes(t *testing.T) {
+	items := testModel().setMenu("internet").items()
+
+	assertMenuItem(t, items, "Весь трафик через VPN", "tunnel")
+	assertMenuItem(t, items, "Прямой интернет, выбранные сайты через VPN", "selective")
+	assertMenuItem(t, items, "Полностью прямой интернет / выключить VPN", "direct")
+}
+
+func TestTUIRoutingRulesMenuSeparatesDirectAndProxyLists(t *testing.T) {
+	mainItems := testModel().items()
+	assertMenuItem(t, mainItems, "Правила маршрутизации", "menu:route-rules")
+
+	items := testModel().setMenu("route-rules").items()
+	assertMenuItem(t, items, "Исключения из VPN", "menu:direct-rules")
+	assertMenuItem(t, items, "Сайты через VPN", "menu:proxy-rules")
+
+	proxyItems := testModel().setMenu("proxy-rules").items()
+	assertMenuItem(t, proxyItems, "Добавить сайт или IP через VPN", "proxy-add:auto")
+	assertMenuItem(t, proxyItems, "Показать сайты через VPN", "proxy-list-human")
+}
+
 func TestTUIWiFiMenuHasSSIDAndPasswordActions(t *testing.T) {
 	m := testModel().run("menu:wifi")
 	actions := map[string]bool{}

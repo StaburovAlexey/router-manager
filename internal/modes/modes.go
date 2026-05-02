@@ -8,6 +8,7 @@ import (
 	"router-manager/internal/network"
 	"router-manager/internal/nftables"
 	"router-manager/internal/reality"
+	"router-manager/internal/rules"
 	"router-manager/internal/shell"
 	"router-manager/internal/singbox"
 	"router-manager/internal/system"
@@ -16,6 +17,14 @@ import (
 var requireRoot = system.RequireRoot
 
 func EnableTunnel(ctx context.Context, runner shell.Runner, paths config.Paths) error {
+	return enableSingBoxMode(ctx, runner, paths, "tunnel")
+}
+
+func EnableSelective(ctx context.Context, runner shell.Runner, paths config.Paths) error {
+	return enableSingBoxMode(ctx, runner, paths, "selective")
+}
+
+func enableSingBoxMode(ctx context.Context, runner shell.Runner, paths config.Paths, mode string) error {
 	if err := requireRoot(); err != nil {
 		return err
 	}
@@ -29,20 +38,23 @@ func EnableTunnel(ctx context.Context, runner shell.Runner, paths config.Paths) 
 	if err := ensureReality(&cfg); err != nil {
 		return err
 	}
+	if err := rules.EnsureDefault(paths); err != nil {
+		return err
+	}
 	if err := network.EnableIPv4Forwarding(ctx, runner, paths.SysctlConf); err != nil {
 		return err
 	}
-	data, err := singbox.RenderLocal(cfg, paths)
+	data, err := singbox.RenderLocalForMode(cfg, paths, mode)
 	if err != nil {
 		return err
 	}
 	if err := singbox.ApplyConfig(ctx, runner, paths, data); err != nil {
 		return err
 	}
-	if err := nftables.Apply(ctx, runner, paths, cfg, "tunnel"); err != nil {
+	if err := nftables.Apply(ctx, runner, paths, cfg, mode); err != nil {
 		return err
 	}
-	cfg.CurrentMode = "tunnel"
+	cfg.CurrentMode = mode
 	if err := config.Save(paths, cfg); err != nil {
 		return err
 	}

@@ -1,6 +1,6 @@
 {
   "log": {
-    "level": "info",
+    "level": "warn",
     "timestamp": true
   },
   "dns": {
@@ -18,11 +18,11 @@
     ],
     "rules": [
       {
-        "rule_set": "custom-direct",
-        "server": "local"
+        "rule_set": "{{.DNSRuleSet}}",
+        "server": "{{.DNSRuleServer}}"
       }
     ],
-    "final": "remote"
+    "final": "{{.DNSFinal}}"
   },
   "inbounds": [
     {
@@ -69,10 +69,10 @@
     "default_domain_resolver": "local",
     "rule_set": [
       {
-        "tag": "custom-direct",
+        "tag": "{{.RouteRuleSet}}",
         "type": "local",
         "format": "source",
-        "path": "{{.CustomDirectPath}}"
+        "path": "{{.RouteRulePath}}"
       }
     ],
     "rules": [
@@ -91,11 +91,11 @@
         "outbound": "direct"
       },
       {
-        "rule_set": "custom-direct",
-        "outbound": "direct"
+        "rule_set": "{{.RouteRuleSet}}",
+        "outbound": "{{.RouteRuleOutbound}}"
       }
     ],
-    "final": "proxy",
+    "final": "{{.RouteFinal}}",
     "auto_detect_interface": true
   }
 }

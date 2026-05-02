@@ -42,12 +42,24 @@ func EmptyRuleSet() RuleSet {
 }
 
 func EnsureDefault(paths config.Paths) error {
-	if _, err := os.Stat(paths.CustomDirect); err == nil {
+	for _, path := range []string{paths.CustomDirect, paths.CustomProxy} {
+		if err := EnsureDefaultPath(path); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func EnsureDefaultPath(path string) error {
+	if strings.TrimSpace(path) == "" {
+		return nil
+	}
+	if _, err := os.Stat(path); err == nil {
 		return nil
 	} else if !errors.Is(err, os.ErrNotExist) {
 		return err
 	}
-	return Save(paths.CustomDirect, EmptyRuleSet())
+	return Save(path, EmptyRuleSet())
 }
 
 func Load(path string) (RuleSet, error) {
@@ -173,6 +185,9 @@ func AfterChange(ctx context.Context, runner shell.Runner, paths config.Paths) e
 	if _, err := Load(paths.CustomDirect); err != nil {
 		return fmt.Errorf("custom-direct.json не прошёл проверку: %w", err)
 	}
+	if _, err := Load(paths.CustomProxy); err != nil {
+		return fmt.Errorf("custom-proxy.json не прошёл проверку: %w", err)
+	}
 	if _, err := os.Stat(paths.SingBoxLocalConf); err == nil {
 		if err := singbox.CheckConfig(ctx, runner, paths.SingBoxLocalConf); err != nil {
 			return err
@@ -182,16 +197,20 @@ func AfterChange(ctx context.Context, runner shell.Runner, paths config.Paths) e
 	if err != nil {
 		return err
 	}
-	if cfg.CurrentMode == "tunnel" {
+	if cfg.CurrentMode == "tunnel" || cfg.CurrentMode == "selective" {
 		return singbox.Restart(ctx, runner)
 	}
 	return nil
 }
 
 func FormatHuman(set RuleSet) string {
+	return FormatHumanWithTitle(set, "Сайты и адреса прямого доступа")
+}
+
+func FormatHumanWithTitle(set RuleSet, title string) string {
 	set = normalize(set)
 	var b strings.Builder
-	fmt.Fprintln(&b, "Сайты и адреса прямого доступа:")
+	fmt.Fprintln(&b, title+":")
 	hasRules := false
 	for _, value := range set.Rules[0].DomainSuffix {
 		hasRules = true

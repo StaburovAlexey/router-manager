@@ -107,11 +107,6 @@ func SeedFiles(paths config.Paths) error {
 	if err := rules.EnsureDefault(paths); err != nil {
 		return err
 	}
-	if _, err := os.Stat(paths.CustomProxy); os.IsNotExist(err) {
-		if err := config.WriteSensitiveText(paths.CustomProxy, "{\n  \"version\": 3,\n  \"rules\": []\n}\n"); err != nil {
-			return err
-		}
-	}
 	if _, err := os.Stat(paths.InfraRules); os.IsNotExist(err) {
 		if err := config.WriteSensitiveText(paths.InfraRules, "{\n  \"version\": 3,\n  \"rules\": []\n}\n"); err != nil {
 			return err

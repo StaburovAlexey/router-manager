@@ -1,11 +1,15 @@
 package rules
 
 import (
+	"context"
 	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"router-manager/internal/config"
+	"router-manager/internal/shell"
 )
 
 func TestAddNormalizesValues(t *testing.T) {
@@ -88,6 +92,44 @@ func TestAddAutoAcceptsURLDomainIPAndCIDR(t *testing.T) {
 	}
 }
 
+func TestEnsureDefaultCreatesDirectAndProxyRuleSets(t *testing.T) {
+	paths := config.NewPaths(t.TempDir())
+	if err := EnsureDefault(paths); err != nil {
+		t.Fatal(err)
+	}
+	for _, path := range []string{paths.CustomDirect, paths.CustomProxy} {
+		set, err := Load(path)
+		if err != nil {
+			t.Fatalf("Load(%s): %v", path, err)
+		}
+		if set.Version != 3 {
+			t.Fatalf("%s version = %d, want 3", path, set.Version)
+		}
+	}
+}
+
+func TestAfterChangeRestartsSingBoxForSelectiveMode(t *testing.T) {
+	paths := config.NewPaths(t.TempDir())
+	cfg := config.DefaultConfig()
+	cfg.CurrentMode = "selective"
+	if err := config.Save(paths, cfg); err != nil {
+		t.Fatal(err)
+	}
+	if err := EnsureDefault(paths); err != nil {
+		t.Fatal(err)
+	}
+	runner := &shell.DryRunner{Outputs: map[string]string{
+		"systemctl is-active sing-box": "active",
+	}}
+
+	if err := AfterChange(context.Background(), runner, paths); err != nil {
+		t.Fatal(err)
+	}
+	if !called(runner.Calls, "systemctl restart sing-box") {
+		t.Fatalf("sing-box was not restarted: %#v", runner.Calls)
+	}
+}
+
 func TestLoadRejectsWrongVersion(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "custom-direct.json")
 	if err := os.WriteFile(path, []byte(`{"version":2,"rules":[]}`), 0o600); err != nil {
@@ -166,4 +208,13 @@ func TestLoadNormalizesCompactRulesForEditing(t *testing.T) {
 	if len(set.Rules[1].Domain) != 1 || set.Rules[1].Domain[0] != "login.example.com" {
 		t.Fatalf("domain bucket not normalized: %#v", set.Rules)
 	}
+}
+
+func called(calls []string, want string) bool {
+	for _, call := range calls {
+		if call == want {
+			return true
+		}
+	}
+	return false
 }

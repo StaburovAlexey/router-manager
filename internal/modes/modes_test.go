@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"router-manager/internal/config"
@@ -52,6 +53,43 @@ func TestEnableDirectEnablesIPv4Forwarding(t *testing.T) {
 	}
 	if indexOf(runner.Calls, "sysctl -w net.ipv4.ip_forward=1") > firstCallWithPrefix(runner.Calls, "nft ") {
 		t.Fatalf("forwarding must be enabled before nftables apply: %#v", runner.Calls)
+	}
+}
+
+func TestEnableSelectiveUsesSingBoxAndTunnelFirewall(t *testing.T) {
+	paths := testModePaths(t)
+	cfg := testModeConfig()
+	cfg.CurrentMode = "direct"
+	if err := config.Save(paths, cfg); err != nil {
+		t.Fatal(err)
+	}
+	runner := testModeRunner()
+	withRootForTest(t)
+
+	if err := EnableSelective(context.Background(), runner, paths); err != nil {
+		t.Fatal(err)
+	}
+
+	loaded, err := config.Load(paths)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if loaded.CurrentMode != "selective" {
+		t.Fatalf("CurrentMode = %q, want selective", loaded.CurrentMode)
+	}
+	data, err := os.ReadFile(paths.SingBoxLocalConf)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(data), `"final": "direct"`) || !strings.Contains(string(data), `"custom-proxy"`) {
+		t.Fatalf("selective sing-box config must route default direct and custom-proxy via VPN:\n%s", string(data))
+	}
+	nftData, err := os.ReadFile(paths.NftablesConf)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(nftData), `oifname "tun0" accept`) || !strings.Contains(string(nftData), `iifname "wlan0" drop`) {
+		t.Fatalf("selective mode must use tunnel firewall shape:\n%s", string(nftData))
 	}
 }
 

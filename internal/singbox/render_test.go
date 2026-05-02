@@ -23,6 +23,53 @@ func TestRenderLocalUsesRUReality(t *testing.T) {
 	}
 }
 
+func TestRenderedConfigsUseWarnLogLevel(t *testing.T) {
+	cfg := baseConfig()
+	paths := config.NewPaths(t.TempDir())
+	cases := []struct {
+		name   string
+		render func() ([]byte, error)
+	}{
+		{
+			name: "local",
+			render: func() ([]byte, error) {
+				return RenderLocal(cfg, paths)
+			},
+		},
+		{
+			name: "ru",
+			render: func() ([]byte, error) {
+				return RenderRU(cfg, "ru-private", config.ForeignServers{Servers: []config.ForeignServer{
+					foreignServer("de-1"),
+				}}, "")
+			},
+		},
+		{
+			name: "foreign",
+			render: func() ([]byte, error) {
+				server := foreignServer("de-1")
+				return RenderForeign(server, cfg.Reality.UUID, "foreign-private")
+			},
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			data, err := tc.render()
+			if err != nil {
+				t.Fatal(err)
+			}
+			payload := decodeConfig(t, data)
+			log := payload["log"].(map[string]any)
+			if log["level"] != "warn" {
+				t.Fatalf("log.level = %v, want warn:\n%s", log["level"], string(data))
+			}
+			if strings.Contains(string(data), `"level": "info"`) {
+				t.Fatalf("config must not use info log level:\n%s", string(data))
+			}
+		})
+	}
+}
+
 func TestRenderLocalUsesSingBox112DNSFormat(t *testing.T) {
 	cfg := baseConfig()
 	paths := config.NewPaths(t.TempDir())
@@ -47,6 +94,62 @@ func TestRenderLocalUsesSingBox112DNSFormat(t *testing.T) {
 	route := payload["route"].(map[string]any)
 	if route["default_domain_resolver"] != "local" {
 		t.Fatalf("route.default_domain_resolver must be set for sing-box 1.12+:\n%s", string(data))
+	}
+}
+
+func TestRenderLocalTunnelRoutesDefaultToProxyAndCustomDirectToDirect(t *testing.T) {
+	cfg := baseConfig()
+	paths := config.NewPaths(t.TempDir())
+	data, err := RenderLocalForMode(cfg, paths, "tunnel")
+	if err != nil {
+		t.Fatal(err)
+	}
+	payload := decodeConfig(t, data)
+
+	route := payload["route"].(map[string]any)
+	if route["final"] != "proxy" {
+		t.Fatalf("route.final = %v, want proxy:\n%s", route["final"], string(data))
+	}
+	if !hasRuleSet(payload, "custom-direct", paths.CustomDirect) {
+		t.Fatalf("missing custom-direct rule-set:\n%s", string(data))
+	}
+	if !hasRouteRule(payload, "custom-direct", "direct") {
+		t.Fatalf("missing custom-direct -> direct route rule:\n%s", string(data))
+	}
+	if !hasDNSRule(payload, "custom-direct", "local") {
+		t.Fatalf("missing custom-direct -> local DNS rule:\n%s", string(data))
+	}
+	dns := payload["dns"].(map[string]any)
+	if dns["final"] != "remote" {
+		t.Fatalf("dns.final = %v, want remote:\n%s", dns["final"], string(data))
+	}
+}
+
+func TestRenderLocalSelectiveRoutesDefaultToDirectAndCustomProxyToProxy(t *testing.T) {
+	cfg := baseConfig()
+	paths := config.NewPaths(t.TempDir())
+	data, err := RenderLocalForMode(cfg, paths, "selective")
+	if err != nil {
+		t.Fatal(err)
+	}
+	payload := decodeConfig(t, data)
+
+	route := payload["route"].(map[string]any)
+	if route["final"] != "direct" {
+		t.Fatalf("route.final = %v, want direct:\n%s", route["final"], string(data))
+	}
+	if !hasRuleSet(payload, "custom-proxy", paths.CustomProxy) {
+		t.Fatalf("missing custom-proxy rule-set:\n%s", string(data))
+	}
+	if !hasRouteRule(payload, "custom-proxy", "proxy") {
+		t.Fatalf("missing custom-proxy -> proxy route rule:\n%s", string(data))
+	}
+	if !hasDNSRule(payload, "custom-proxy", "remote") {
+		t.Fatalf("missing custom-proxy -> remote DNS rule:\n%s", string(data))
+	}
+	dns := payload["dns"].(map[string]any)
+	if dns["final"] != "local" {
+		t.Fatalf("dns.final = %v, want local:\n%s", dns["final"], string(data))
 	}
 }
 
@@ -168,6 +271,39 @@ func hasOutbound(payload map[string]any, tag string, typ string) bool {
 	for _, item := range payload["outbounds"].([]any) {
 		outbound := item.(map[string]any)
 		if outbound["tag"] == tag && outbound["type"] == typ {
+			return true
+		}
+	}
+	return false
+}
+
+func hasRuleSet(payload map[string]any, tag string, path string) bool {
+	route := payload["route"].(map[string]any)
+	for _, item := range route["rule_set"].([]any) {
+		ruleSet := item.(map[string]any)
+		if ruleSet["tag"] == tag && ruleSet["path"] == path {
+			return true
+		}
+	}
+	return false
+}
+
+func hasRouteRule(payload map[string]any, ruleSet string, outbound string) bool {
+	route := payload["route"].(map[string]any)
+	for _, item := range route["rules"].([]any) {
+		rule := item.(map[string]any)
+		if rule["rule_set"] == ruleSet && rule["outbound"] == outbound {
+			return true
+		}
+	}
+	return false
+}
+
+func hasDNSRule(payload map[string]any, ruleSet string, server string) bool {
+	dns := payload["dns"].(map[string]any)
+	for _, item := range dns["rules"].([]any) {
+		rule := item.(map[string]any)
+		if rule["rule_set"] == ruleSet && rule["server"] == server {
 			return true
 		}
 	}

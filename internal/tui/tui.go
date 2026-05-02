@@ -365,8 +365,9 @@ func (m model) items() []item {
 	case "internet":
 		return []item{
 			{"Проверить состояние интернета", "status"},
-			{"Включить маршрут через сервер", "tunnel"},
-			{"Отключить маршрут через сервер / прямой интернет", "direct"},
+			{"Весь трафик через VPN", "tunnel"},
+			{"Прямой интернет, выбранные сайты через VPN", "selective"},
+			{"Полностью прямой интернет / выключить VPN", "direct"},
 			{"Выбрать выходной сервер", "menu:foreign-switch"},
 			{"Автоматически выбирать выходной сервер", "ru-auto"},
 			{"Назад", "back"},
@@ -378,16 +379,33 @@ func (m model) items() []item {
 			{"Проверить состояние", "status"},
 			{"Назад", "back"},
 		}
+	case "route-rules":
+		return []item{
+			{"Исключения из VPN", "menu:direct-rules"},
+			{"Сайты через VPN", "menu:proxy-rules"},
+			{"Назад", "back"},
+		}
 	case "direct-rules":
 		return []item{
-			{"Показать сайты и адреса", "direct-list-human"},
-			{"Добавить сайт или IP", "direct-add:auto"},
+			{"Показать исключения из VPN", "direct-list-human"},
+			{"Добавить сайт или IP напрямую", "direct-add:auto"},
 			{"Удалить сайт или IP", "direct-remove"},
 			{"Расширенно: домен с поддоменами", "direct-add:suffix"},
 			{"Расширенно: только точный домен", "direct-add:domain"},
 			{"Расширенно: IP", "direct-add:ip"},
 			{"Расширенно: подсеть CIDR", "direct-add:cidr"},
-			{"Назад", "back"},
+			{"Назад", "menu:route-rules"},
+		}
+	case "proxy-rules":
+		return []item{
+			{"Показать сайты через VPN", "proxy-list-human"},
+			{"Добавить сайт или IP через VPN", "proxy-add:auto"},
+			{"Удалить сайт или IP", "proxy-remove"},
+			{"Расширенно: домен с поддоменами", "proxy-add:suffix"},
+			{"Расширенно: только точный домен", "proxy-add:domain"},
+			{"Расширенно: IP", "proxy-add:ip"},
+			{"Расширенно: подсеть CIDR", "proxy-add:cidr"},
+			{"Назад", "menu:route-rules"},
 		}
 	case "ru":
 		return []item{
@@ -455,7 +473,8 @@ func (m model) items() []item {
 		return []item{
 			{"Входной сервер", "menu:ru"},
 			{"Выходные серверы", "menu:foreign"},
-			{"Правила прямого доступа в JSON", "direct-list"},
+			{"Исключения из VPN в JSON", "direct-list"},
+			{"Сайты через VPN в JSON", "proxy-list"},
 			{"Назад", "back"},
 		}
 	case "backup":
@@ -468,7 +487,7 @@ func (m model) items() []item {
 		return []item{
 			{"Интернет", "menu:internet"},
 			{"Подключить устройство", "menu:connect"},
-			{"Сайты прямого доступа", "menu:direct-rules"},
+			{"Правила маршрутизации", "menu:route-rules"},
 			{"Wi-Fi", "menu:wifi"},
 			{"Проблемы и диагностика", "menu:problems"},
 			{"Обслуживание", "menu:maintenance"},
@@ -485,8 +504,12 @@ func (m model) menuTitle() string {
 		return "интернет"
 	case "connect":
 		return "подключение устройства"
+	case "route-rules":
+		return "правила маршрутизации"
 	case "direct-rules":
-		return "сайты прямого доступа"
+		return "исключения из VPN"
+	case "proxy-rules":
+		return "сайты через VPN"
 	case "ru":
 		return "входной сервер"
 	case "foreign":
@@ -521,13 +544,14 @@ func (m model) run(action string) model {
 	if strings.HasPrefix(action, "menu:") {
 		return m.setMenu(strings.TrimPrefix(action, "menu:"))
 	}
-	if strings.HasPrefix(action, "direct-add:") {
-		kind := strings.TrimPrefix(action, "direct-add:")
+	if strings.HasPrefix(action, "direct-add:") || strings.HasPrefix(action, "proxy-add:") {
+		spec := m.ruleSetSpecForAction(action)
+		kind := strings.TrimPrefix(action, spec.addPrefix+":")
 		label := "Сайт, IP или подсеть"
 		if kind != "auto" {
 			label = "Значение " + kind
 		}
-		return m.startPrompt("Добавить правило прямого доступа", label, "", "direct-add:"+kind)
+		return m.startPrompt(spec.addTitle, label, "", spec.addPrefix+":"+kind)
 	}
 	if strings.HasPrefix(action, "wifi-band:") {
 		return m.applyWiFi("Wi-Fi диапазон", func(cfg *config.Config) error {
@@ -570,10 +594,13 @@ func (m model) run(action string) model {
 		return m.withResult(diagnostics.Format(status), err)
 	case "tunnel":
 		err := modes.EnableTunnel(m.ctx, m.runner, m.paths)
-		return m.withResult("Режим маршрутизации включён.", err)
+		return m.withResult("Весь трафик через VPN включён.", err)
+	case "selective":
+		err := modes.EnableSelective(m.ctx, m.runner, m.paths)
+		return m.withResult("Прямой интернет с выбранными сайтами через VPN включён.", err)
 	case "direct":
 		err := modes.EnableDirect(m.ctx, m.runner, m.paths)
-		return m.withResult("Прямой интернет включён.", err)
+		return m.withResult("Полностью прямой интернет включён.", err)
 	case "logs":
 		logs, err := diagnostics.Logs(m.ctx, m.runner)
 		return m.withResult(logs, err)
@@ -593,6 +620,12 @@ func (m model) run(action string) model {
 		return m.showDirectRulesHuman()
 	case "direct-remove":
 		return m.startPrompt("Удалить правило прямого доступа", "Сайт, IP или подсеть", "", "direct-remove")
+	case "proxy-list":
+		return m.showProxyRules()
+	case "proxy-list-human":
+		return m.showProxyRulesHuman()
+	case "proxy-remove":
+		return m.startPrompt("Удалить правило через VPN", "Сайт, IP или подсеть", "", "proxy-remove")
 	case "ru-status":
 		out, err := m.ruService().Status(m.ctx)
 		return m.withResult(out, err)
@@ -646,35 +679,43 @@ func (m model) run(action string) model {
 }
 
 func (m model) runPrompt(action string, value string) model {
-	if strings.HasPrefix(action, "direct-add:") {
-		kind := strings.TrimPrefix(action, "direct-add:")
+	if strings.HasPrefix(action, "direct-add:") || strings.HasPrefix(action, "proxy-add:") {
+		spec := m.ruleSetSpecForAction(action)
+		kind := strings.TrimPrefix(action, spec.addPrefix+":")
 		if err := system.RequireRoot(); err != nil {
 			return m.withResult("", err)
 		}
-		if _, err := system.BackupFile(m.paths.CustomDirect, m.paths.BackupsDir); err != nil {
+		if err := rules.EnsureDefaultPath(spec.path); err != nil {
+			return m.withResult("", err)
+		}
+		if _, err := system.BackupFile(spec.path, m.paths.BackupsDir); err != nil {
 			return m.withResult("", err)
 		}
 		added := ""
 		var err error
 		if kind == "auto" {
-			_, added, err = rules.AddAuto(m.paths.CustomDirect, value)
+			_, added, err = rules.AddAuto(spec.path, value)
 		} else {
-			added, err = rules.Add(m.paths.CustomDirect, kind, value)
+			added, err = rules.Add(spec.path, kind, value)
 		}
 		if err == nil {
 			err = rules.AfterChange(m.ctx, m.runner, m.paths)
 		}
-		return m.withResult(fmt.Sprintf("Добавлено правило прямого доступа: %s", added), err)
+		return m.withResult(fmt.Sprintf("%s: %s", spec.addedMessage, added), err)
 	}
 	switch action {
-	case "direct-remove":
+	case "direct-remove", "proxy-remove":
+		spec := m.ruleSetSpecForAction(action)
 		if err := system.RequireRoot(); err != nil {
 			return m.withResult("", err)
 		}
-		if _, err := system.BackupFile(m.paths.CustomDirect, m.paths.BackupsDir); err != nil {
+		if err := rules.EnsureDefaultPath(spec.path); err != nil {
 			return m.withResult("", err)
 		}
-		removed, err := rules.Remove(m.paths.CustomDirect, value)
+		if _, err := system.BackupFile(spec.path, m.paths.BackupsDir); err != nil {
+			return m.withResult("", err)
+		}
+		removed, err := rules.Remove(spec.path, value)
 		if err == nil && !removed {
 			err = fmt.Errorf("правило не найдено: %s", value)
 		}
@@ -858,6 +899,30 @@ func (m model) foreignService() foreign.Service {
 	return foreign.Service{Paths: m.paths, Runner: m.runner, SSH: sshclient.Client{Runner: m.runner}}
 }
 
+type tuiRuleSetSpec struct {
+	path         string
+	addPrefix    string
+	addTitle     string
+	addedMessage string
+}
+
+func (m model) ruleSetSpecForAction(action string) tuiRuleSetSpec {
+	if strings.HasPrefix(action, "proxy-") {
+		return tuiRuleSetSpec{
+			path:         m.paths.CustomProxy,
+			addPrefix:    "proxy-add",
+			addTitle:     "Добавить правило через VPN",
+			addedMessage: "Добавлено правило через VPN",
+		}
+	}
+	return tuiRuleSetSpec{
+		path:         m.paths.CustomDirect,
+		addPrefix:    "direct-add",
+		addTitle:     "Добавить правило прямого доступа",
+		addedMessage: "Добавлено правило прямого доступа",
+	}
+}
+
 func (m model) showConnectInfo() model {
 	cfg, err := config.Load(m.paths)
 	if err != nil {
@@ -868,8 +933,13 @@ func (m model) showConnectInfo() model {
 	fmt.Fprintln(&b)
 	fmt.Fprintf(&b, "Wi-Fi сеть: %s\n", valueOrNotConfigured(cfg.MiniPC.SSID))
 	fmt.Fprintf(&b, "Режим сейчас: %s\n", valueOrNotConfigured(cfg.CurrentMode))
-	if cfg.CurrentMode != "tunnel" {
-		fmt.Fprintln(&b, "Маршрут через сервер сейчас выключен. Чтобы весь трафик Wi-Fi шёл через него, выберите: Интернет -> Включить маршрут через сервер.")
+	switch cfg.CurrentMode {
+	case "tunnel":
+		fmt.Fprintln(&b, "Весь Wi-Fi трафик идёт через VPN, кроме исключений из VPN.")
+	case "selective":
+		fmt.Fprintln(&b, "Wi-Fi работает напрямую, а выбранные сайты и IP идут через VPN.")
+	default:
+		fmt.Fprintln(&b, "VPN сейчас выключен. Выберите нужный режим в меню Интернет.")
 	}
 	if _, err := os.Stat(m.paths.ClientLink); err == nil {
 		fmt.Fprintln(&b, "QR-код клиента доступен в пункте: Показать QR-код клиента.")
@@ -891,7 +961,23 @@ func (m model) showQR() model {
 }
 
 func (m model) showDirectRules() model {
-	set, err := rules.Load(m.paths.CustomDirect)
+	return m.showRuleSetJSON(m.paths.CustomDirect)
+}
+
+func (m model) showDirectRulesHuman() model {
+	return m.showRuleSetHuman(m.paths.CustomDirect, "Сайты и адреса прямого доступа")
+}
+
+func (m model) showProxyRules() model {
+	return m.showRuleSetJSON(m.paths.CustomProxy)
+}
+
+func (m model) showProxyRulesHuman() model {
+	return m.showRuleSetHuman(m.paths.CustomProxy, "Сайты и адреса через VPN")
+}
+
+func (m model) showRuleSetJSON(path string) model {
+	set, err := rules.Load(path)
 	if err != nil {
 		return m.withResult("", err)
 	}
@@ -902,12 +988,12 @@ func (m model) showDirectRules() model {
 	return m.withResult(string(data), nil)
 }
 
-func (m model) showDirectRulesHuman() model {
-	set, err := rules.Load(m.paths.CustomDirect)
+func (m model) showRuleSetHuman(path string, title string) model {
+	set, err := rules.Load(path)
 	if err != nil {
 		return m.withResult("", err)
 	}
-	return m.withResult(rules.FormatHuman(set), nil)
+	return m.withResult(rules.FormatHumanWithTitle(set, title), nil)
 }
 
 func (m model) showForeignList() model {
