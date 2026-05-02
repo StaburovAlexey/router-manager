@@ -1,0 +1,10 @@
+{
+  "name": "router-manager",
+  "private": true,
+  "version": "0.0.0",
+  "description": "Release helper for router-manager.",
+  "scripts": {
+    "release": "node scripts/release.mjs",
+    "release:dry-run": "node scripts/release.mjs --dry-run"
+  }
+}
