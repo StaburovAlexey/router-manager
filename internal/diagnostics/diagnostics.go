@@ -25,6 +25,7 @@ type Status struct {
 	Hostapd         string
 	Dnsmasq         string
 	Nftables        string
+	IPv4Forwarding  string
 	RUServer        string
 	ForeignMode     string
 	SelectedForeign string
@@ -51,6 +52,7 @@ func Collect(ctx context.Context, runner shell.Runner, paths config.Paths) (Stat
 		Hostapd:         system.ServiceStatus(ctx, runner, "hostapd"),
 		Dnsmasq:         system.ServiceStatus(ctx, runner, "dnsmasq"),
 		Nftables:        nftablesStatus(ctx, runner),
+		IPv4Forwarding:  network.IPv4ForwardingStatus(ctx, runner),
 		RUServer:        cfg.RUServer.IP,
 		PublicIP:        network.PublicIP(ctx, runner),
 		DNS:             dnsStatus(ctx, runner),
@@ -88,6 +90,7 @@ func Format(status Status) string {
 	fmt.Fprintf(&b, "hostapd: %s\n", status.Hostapd)
 	fmt.Fprintf(&b, "dnsmasq: %s\n", status.Dnsmasq)
 	fmt.Fprintf(&b, "nftables: %s\n", status.Nftables)
+	fmt.Fprintf(&b, "IPv4 forwarding: %s\n", status.IPv4Forwarding)
 	fmt.Fprintf(&b, "Входной сервер: %s\n", value(status.RUServer))
 	fmt.Fprintf(&b, "Режим выходных серверов: %s\n", value(status.ForeignMode))
 	fmt.Fprintf(&b, "Выбранный выходной сервер: %s\n", value(status.SelectedForeign))
@@ -136,6 +139,9 @@ func wifiSummary(status Status) string {
 }
 
 func routeSummary(status Status) string {
+	if status.IPv4Forwarding != "ok" {
+		return "ошибка: " + status.IPv4Forwarding
+	}
 	switch status.Mode {
 	case "tunnel":
 		if status.SingBox == "active" {
@@ -173,6 +179,9 @@ func recommendations(status Status) []string {
 	if status.Mode == "tunnel" && status.SingBox != "active" {
 		result = append(result, "режим маршрутизации включён в настройках, но sing-box не запущен; откройте логи")
 	}
+	if status.IPv4Forwarding != "ok" {
+		result = append(result, "IPv4 forwarding выключен; включите режим маршрутизации заново: sudo router-manager tunnel или sudo router-manager direct")
+	}
 	if status.DNS != "ok" {
 		result = append(result, "DNS не отвечает; перезапустите режим маршрутизации или проверьте логи sing-box")
 	}
@@ -195,6 +204,8 @@ func nextActions(status Status) []string {
 			result = append(result, "откройте Проблемы и диагностика -> Показать логи и проверьте dnsmasq")
 		case strings.Contains(rec, "sing-box"):
 			result = append(result, "откройте Проблемы и диагностика -> Показать логи; затем попробуйте Интернет -> Включить маршрут через сервер")
+		case strings.Contains(rec, "IPv4 forwarding"):
+			result = append(result, "выполните sudo router-manager tunnel или sudo router-manager direct, чтобы заново применить сетевые настройки")
 		case strings.Contains(rec, "DNS"):
 			result = append(result, "попробуйте Интернет -> Отключить маршрут через сервер, затем Интернет -> Включить маршрут через сервер")
 		default:

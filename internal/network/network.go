@@ -150,6 +150,24 @@ func EnableIPv4Forwarding(ctx context.Context, runner shell.Runner, sysctlPath s
 	return runner.Run(ctx, "sysctl", "-w", "net.ipv4.ip_forward=1")
 }
 
+func CheckIPv4Forwarding(ctx context.Context, runner shell.Runner) error {
+	out, err := runner.Output(ctx, "sysctl", "-n", "net.ipv4.ip_forward")
+	if err != nil {
+		return fmt.Errorf("не удалось проверить IPv4 forwarding: %w", err)
+	}
+	if strings.TrimSpace(out) != "1" {
+		return fmt.Errorf("IPv4 forwarding выключен")
+	}
+	return nil
+}
+
+func IPv4ForwardingStatus(ctx context.Context, runner shell.Runner) string {
+	if err := CheckIPv4Forwarding(ctx, runner); err != nil {
+		return err.Error()
+	}
+	return "ok"
+}
+
 func GatewayCIDR(gateway string, lanCIDR string) (string, error) {
 	gatewayIP := net.ParseIP(strings.TrimSpace(gateway))
 	if gatewayIP == nil || gatewayIP.To4() == nil {

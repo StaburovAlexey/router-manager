@@ -2,8 +2,10 @@ package network
 
 import (
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"router-manager/internal/config"
@@ -88,5 +90,34 @@ func TestEnableIPv4Forwarding(t *testing.T) {
 	}
 	if len(runner.Calls) != 1 || runner.Calls[0] != "sysctl -w net.ipv4.ip_forward=1" {
 		t.Fatalf("unexpected calls: %#v", runner.Calls)
+	}
+}
+
+func TestCheckIPv4Forwarding(t *testing.T) {
+	runner := &shell.DryRunner{Outputs: map[string]string{
+		"sysctl -n net.ipv4.ip_forward": "1\n",
+	}}
+	if err := CheckIPv4Forwarding(context.Background(), runner); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestCheckIPv4ForwardingRejectsDisabledValue(t *testing.T) {
+	runner := &shell.DryRunner{Outputs: map[string]string{
+		"sysctl -n net.ipv4.ip_forward": "0\n",
+	}}
+	err := CheckIPv4Forwarding(context.Background(), runner)
+	if err == nil || !strings.Contains(err.Error(), "выключен") {
+		t.Fatalf("error = %v", err)
+	}
+}
+
+func TestCheckIPv4ForwardingReportsCommandError(t *testing.T) {
+	runner := &shell.DryRunner{Errors: map[string]error{
+		"sysctl -n net.ipv4.ip_forward": errors.New("boom"),
+	}}
+	err := CheckIPv4Forwarding(context.Background(), runner)
+	if err == nil || !strings.Contains(err.Error(), "не удалось проверить") {
+		t.Fatalf("error = %v", err)
 	}
 }

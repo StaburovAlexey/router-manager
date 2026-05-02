@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	"router-manager/internal/config"
+	"router-manager/internal/network"
 	"router-manager/internal/nftables"
 	"router-manager/internal/reality"
 	"router-manager/internal/shell"
@@ -12,8 +13,10 @@ import (
 	"router-manager/internal/system"
 )
 
+var requireRoot = system.RequireRoot
+
 func EnableTunnel(ctx context.Context, runner shell.Runner, paths config.Paths) error {
-	if err := system.RequireRoot(); err != nil {
+	if err := requireRoot(); err != nil {
 		return err
 	}
 	cfg, err := config.Load(paths)
@@ -24,6 +27,9 @@ func EnableTunnel(ctx context.Context, runner shell.Runner, paths config.Paths) 
 		return fmt.Errorf("входной сервер не настроен")
 	}
 	if err := ensureReality(&cfg); err != nil {
+		return err
+	}
+	if err := network.EnableIPv4Forwarding(ctx, runner, paths.SysctlConf); err != nil {
 		return err
 	}
 	data, err := singbox.RenderLocal(cfg, paths)
@@ -45,11 +51,14 @@ func EnableTunnel(ctx context.Context, runner shell.Runner, paths config.Paths) 
 }
 
 func EnableDirect(ctx context.Context, runner shell.Runner, paths config.Paths) error {
-	if err := system.RequireRoot(); err != nil {
+	if err := requireRoot(); err != nil {
 		return err
 	}
 	cfg, err := config.Load(paths)
 	if err != nil {
+		return err
+	}
+	if err := network.EnableIPv4Forwarding(ctx, runner, paths.SysctlConf); err != nil {
 		return err
 	}
 	_ = system.Systemctl(ctx, runner, "stop", singbox.Service)
