@@ -153,6 +153,29 @@ func TestRenderLocalSelectiveRoutesDefaultToDirectAndCustomProxyToProxy(t *testi
 	}
 }
 
+func TestRenderLocalSniffsBeforeDomainRouting(t *testing.T) {
+	cfg := baseConfig()
+	paths := config.NewPaths(t.TempDir())
+	data, err := RenderLocalForMode(cfg, paths, "selective")
+	if err != nil {
+		t.Fatal(err)
+	}
+	payload := decodeConfig(t, data)
+	route := payload["route"].(map[string]any)
+	routeRules := route["rules"].([]any)
+	if len(routeRules) < 2 {
+		t.Fatalf("route rules are too short:\n%s", string(data))
+	}
+	first := routeRules[0].(map[string]any)
+	if first["action"] != "sniff" || first["timeout"] != "1s" {
+		t.Fatalf("first route rule must sniff domains before DNS and domain routing:\n%s", string(data))
+	}
+	second := routeRules[1].(map[string]any)
+	if second["action"] != "hijack-dns" {
+		t.Fatalf("DNS hijack must remain after sniff action:\n%s", string(data))
+	}
+}
+
 func TestRenderLocalTunAddressDoesNotMatchPrivateDirectRules(t *testing.T) {
 	cfg := baseConfig()
 	paths := config.NewPaths(t.TempDir())
