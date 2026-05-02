@@ -5,11 +5,13 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"strings"
 	"testing"
 
 	"router-manager/internal/config"
 	"router-manager/internal/shell"
+	"router-manager/internal/singbox"
 	"router-manager/internal/wifi"
 )
 
@@ -74,6 +76,32 @@ func TestShouldReenterServerDetailsCanDecline(t *testing.T) {
 	reader := bufio.NewReader(strings.NewReader("нет\n"))
 	var out bytes.Buffer
 	err := hostKeyScanError{label: "выходной сервер", err: errors.New("scan failed")}
+
+	if shouldReenterServerDetails(err, reader, &out, "выходного сервера") {
+		t.Fatal("expected no answer to decline re-entering server details")
+	}
+}
+
+func TestShouldReenterServerDetailsForBusyForeignPort(t *testing.T) {
+	reader := bufio.NewReader(strings.NewReader("да\n"))
+	var out bytes.Buffer
+	err := singbox.RemoteListenPortBusyError{Port: 443, Err: errors.New(`порт подключения 443 уже занят на сервере:
+LISTEN 0      4096   *:443 *:* users:(("xray",pid=926,fd=3))`)}
+
+	if !shouldReenterServerDetails(err, reader, &out, "выходного сервера") {
+		t.Fatal("expected yes answer to request re-entering server details")
+	}
+	for _, want := range []string{"Порт подключения 443 уже занят для выходного сервера", "Выберите другой порт подключения", "Ввести данные выходного сервера заново?"} {
+		if !strings.Contains(out.String(), want) {
+			t.Fatalf("missing %q in output:\n%s", want, out.String())
+		}
+	}
+}
+
+func TestShouldReenterServerDetailsCanDeclineBusyForeignPort(t *testing.T) {
+	reader := bufio.NewReader(strings.NewReader("нет\n"))
+	var out bytes.Buffer
+	err := fmt.Errorf("apply foreign config: %w", singbox.RemoteListenPortBusyError{Port: 443, Err: errors.New("busy")})
 
 	if shouldReenterServerDetails(err, reader, &out, "выходного сервера") {
 		t.Fatal("expected no answer to decline re-entering server details")

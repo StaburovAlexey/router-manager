@@ -90,6 +90,27 @@ func TestTUIWiFiMenuHasSSIDAndPasswordActions(t *testing.T) {
 	}
 }
 
+func TestTUIWiFiMenuUsesSingleBandPicker(t *testing.T) {
+	items := testModel().run("menu:wifi").items()
+
+	assertMenuItem(t, items, "Выбрать диапазон", "menu:wifi-band")
+	assertNoMenuTitle(t, items, "Установить диапазон 2.4 GHz")
+	assertNoMenuTitle(t, items, "Установить диапазон 5 GHz")
+}
+
+func TestTUIWiFiBandMenuShowsOnlySupportedBands(t *testing.T) {
+	paths := testWiFiPaths(t)
+	m := testModelWithPaths(paths)
+	m.runner = testWiFi24OnlyRunner()
+
+	items := m.setMenu("wifi-band").items()
+
+	assertMenuItem(t, items, "2.4 GHz", "wifi-band:2.4")
+	assertNoMenuTitle(t, items, "5 GHz")
+	assertNoMenuTitle(t, items, "5 GHz - текущий")
+	assertMenuItem(t, items, "Назад", "menu:wifi")
+}
+
 func TestTUIWiFiSSIDStartsPrompt(t *testing.T) {
 	m := testModel().run("wifi-ssid")
 	if m.mode != modePrompt || m.prompt.action != "wifi-ssid" {
@@ -252,6 +273,15 @@ func assertMenuItem(t *testing.T, items []item, title string, action string) {
 	t.Fatalf("menu item %q with action %q not found in %#v", title, action, items)
 }
 
+func assertNoMenuTitle(t *testing.T, items []item, title string) {
+	t.Helper()
+	for _, item := range items {
+		if item.title == title {
+			t.Fatalf("unexpected menu item %q in %#v", title, items)
+		}
+	}
+}
+
 func menuAction(t *testing.T, items []item, title string) string {
 	t.Helper()
 	for _, item := range items {
@@ -305,6 +335,31 @@ Wiphy phy1
 		VHT Capabilities (0x0)
 		Frequencies:
 			* 5180 MHz [36] (20.0 dBm)
+`,
+		"systemctl is-active hostapd": "active",
+		"systemctl is-active dnsmasq": "active",
+	}}
+}
+
+func testWiFi24OnlyRunner() *shell.DryRunner {
+	return &shell.DryRunner{Outputs: map[string]string{
+		"iw dev": `
+phy#1
+	Interface wlan1
+		type managed
+`,
+		"iw list": `
+Wiphy phy1
+	Supported interface modes:
+		 * managed
+		 * AP
+	Band 1:
+		Capabilities: 0x19ef
+			HT20/HT40
+		Frequencies:
+			* 2412 MHz [1] (20.0 dBm)
+			* 2437 MHz [6] (20.0 dBm)
+			* 2462 MHz [11] (20.0 dBm)
 `,
 		"systemctl is-active hostapd": "active",
 		"systemctl is-active dnsmasq": "active",

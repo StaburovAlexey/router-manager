@@ -79,8 +79,20 @@ func TestApplyRemoteConfigStopsBeforeReplaceWhenListenPortBusy(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected busy port error")
 	}
+	var busyErr RemoteListenPortBusyError
+	if !errors.As(err, &busyErr) {
+		t.Fatalf("error type = %T, want RemoteListenPortBusyError: %v", err, err)
+	}
+	if busyErr.Port != 443 {
+		t.Fatalf("busy port = %d, want 443", busyErr.Port)
+	}
 	if !strings.Contains(err.Error(), "порт подключения 443") {
 		t.Fatalf("error does not mention listen port: %v", err)
+	}
+	for _, leak := range []string{"ssh -o BatchMode=yes", "set -eu"} {
+		if strings.Contains(err.Error(), leak) {
+			t.Fatalf("busy port error should stay concise and not include %q:\n%v", leak, err)
+		}
 	}
 	if len(runner.calls) != 1 {
 		t.Fatalf("calls = %#v, want only port check", runner.calls)
@@ -103,7 +115,12 @@ func (r *busyPortRunner) Output(_ context.Context, name string, args ...string) 
 	key := name + " " + strings.Join(args, " ")
 	r.calls = append(r.calls, key)
 	if strings.Contains(key, `ss -H -ltnp "sport = :$port"`) {
-		return "", errors.New("порт подключения 443 уже занят на сервере")
+		return "", errors.New(`ssh -o BatchMode=yes -o ConnectTimeout=8 -p 22 root@203.0.113.10 set -eu
+port=443
+exit status 98: __ROUTER_MANAGER_PORT_BUSY__
+порт подключения 443 уже занят на сервере:
+LISTEN 0      4096   *:443 *:* users:(("xray",pid=926,fd=3))
+Освободите порт или выберите другой порт подключения.`)
 	}
 	return "", nil
 }

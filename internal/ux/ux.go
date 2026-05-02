@@ -34,6 +34,12 @@ func actionsFor(text string) []string {
 			"запустите подготовку снова: sudo router-manager",
 			"если нужна ручная очистка локальных данных и команда router-manager уже доступна: sudo router-manager uninstall --keep-deps",
 		}
+	case strings.Contains(lower, "порт подключения") && strings.Contains(lower, "уже занят"):
+		return []string{
+			"выберите другой порт подключения для сервера",
+			"или освободите занятый порт на VPS, если старый сервис больше не нужен",
+			"после исправления запустите настройку снова",
+		}
 	case strings.Contains(lower, "root") || strings.Contains(lower, "sudo"):
 		return []string{"запустите приложение с правами администратора: sudo router-manager"}
 	case strings.Contains(lower, "qr-ссылка") || strings.Contains(lower, "client-link"):

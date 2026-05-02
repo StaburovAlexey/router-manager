@@ -423,8 +423,7 @@ func (m model) items() []item {
 			{"Сканировать соседние сети", "wifi-scan"},
 			{"Автоподбор канала", "wifi-auto-channel"},
 			{"Перезапустить Wi-Fi", "wifi-restart"},
-			{"Установить диапазон 2.4 GHz", "wifi-band:2.4"},
-			{"Установить диапазон 5 GHz", "wifi-band:5"},
+			{"Выбрать диапазон", "menu:wifi-band"},
 			{"Изменить канал", "wifi-channel"},
 			{"Ширина канала 20 MHz", "wifi-width:20"},
 			{"Ширина канала 40 MHz", "wifi-width:40"},
@@ -433,6 +432,8 @@ func (m model) items() []item {
 		}
 	case "wifi-adapter":
 		return m.wifiAdapterItems()
+	case "wifi-band":
+		return m.wifiBandItems()
 	case "problems":
 		return []item{
 			{"Краткая диагностика", "diagnostics"},
@@ -498,6 +499,8 @@ func (m model) menuTitle() string {
 		return "Wi-Fi"
 	case "wifi-adapter":
 		return "смена Wi-Fi адаптера"
+	case "wifi-band":
+		return "выбор диапазона Wi-Fi"
 	case "problems":
 		return "проблемы и диагностика"
 	case "maintenance":
@@ -533,8 +536,8 @@ func (m model) run(action string) model {
 			if err != nil {
 				return err
 			}
-			if band == "5" && !caps.Supports5 {
-				return fmt.Errorf("выбранный AP-адаптер %s не поддерживает 5 GHz; доступно: %s", cfg.MiniPC.APInterface, wifi.FormatCapabilities(caps))
+			if !supportsWiFiBand(caps, band) {
+				return fmt.Errorf("выбранный AP-адаптер %s не поддерживает %s GHz; доступно: %s", cfg.MiniPC.APInterface, band, wifi.FormatCapabilities(caps))
 			}
 			return wifi.ConfigureBand(cfg, band)
 		})
@@ -969,6 +972,52 @@ func (m model) wifiAdapterItems() []item {
 	}
 	items = append(items, item{"Назад", "menu:wifi"})
 	return items
+}
+
+func (m model) wifiBandItems() []item {
+	cfg, err := config.Load(m.paths)
+	if err != nil {
+		return []item{{"Не удалось прочитать Wi-Fi настройки", "wifi-status"}, {"Назад", "menu:wifi"}}
+	}
+	caps, err := wifi.InspectInterface(m.ctx, m.runner, cfg.MiniPC.APInterface)
+	if err != nil {
+		return []item{{"Диапазоны недоступны: " + err.Error(), "wifi-status"}, {"Назад", "menu:wifi"}}
+	}
+	bands := []struct {
+		value string
+		title string
+		ok    bool
+	}{
+		{value: "2.4", title: "2.4 GHz", ok: caps.Supports24},
+		{value: "5", title: "5 GHz", ok: caps.Supports5},
+	}
+	items := make([]item, 0, len(bands)+1)
+	for _, band := range bands {
+		if !band.ok {
+			continue
+		}
+		title := band.title
+		if cfg.WiFi.Band == band.value {
+			title += " - текущий"
+		}
+		items = append(items, item{title: title, action: "wifi-band:" + band.value})
+	}
+	if len(items) == 0 {
+		items = append(items, item{"Доступные диапазоны не найдены", "wifi-status"})
+	}
+	items = append(items, item{"Назад", "menu:wifi"})
+	return items
+}
+
+func supportsWiFiBand(caps wifi.Capabilities, band string) bool {
+	switch band {
+	case "2.4":
+		return caps.Supports24
+	case "5":
+		return caps.Supports5
+	default:
+		return false
+	}
 }
 
 func (m model) showWiFiStatus() model {

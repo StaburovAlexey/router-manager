@@ -21,11 +21,25 @@ import (
 )
 
 const (
-	BinaryPath      = "/usr/local/bin/sing-box"
-	UnitPath        = "/etc/systemd/system/sing-box.service"
-	Service         = "sing-box"
-	FallbackVersion = "1.12.0"
+	BinaryPath                 = "/usr/local/bin/sing-box"
+	UnitPath                   = "/etc/systemd/system/sing-box.service"
+	Service                    = "sing-box"
+	FallbackVersion            = "1.12.0"
+	remoteListenPortBusyMarker = "__ROUTER_MANAGER_PORT_BUSY__"
 )
+
+type RemoteListenPortBusyError struct {
+	Port int
+	Err  error
+}
+
+func (e RemoteListenPortBusyError) Error() string {
+	return fmt.Sprintf("порт подключения %d уже занят на сервере", e.Port)
+}
+
+func (e RemoteListenPortBusyError) Unwrap() error {
+	return e.Err
+}
 
 type Installer struct {
 	HTTPClient *http.Client
@@ -106,16 +120,29 @@ if [ -n "$listeners" ]; then
     busy="$listeners"
   fi
   if [ -n "$busy" ]; then
+    echo "%s" >&2
     echo "порт подключения $port уже занят на сервере:" >&2
     printf '%%s\n' "$busy" >&2
     echo "Освободите порт или выберите другой порт подключения." >&2
     exit 98
   fi
-fi`, listenPort)
+fi`, listenPort, remoteListenPortBusyMarker)
 	if _, err := ssh.Run(ctx, target, command); err != nil {
+		if isRemoteListenPortBusy(err) {
+			return fmt.Errorf("порт подключения %d не прошёл проверку на сервере: %w", listenPort, RemoteListenPortBusyError{Port: listenPort, Err: err})
+		}
 		return fmt.Errorf("порт подключения %d не прошёл проверку на сервере: %w", listenPort, err)
 	}
 	return nil
+}
+
+func isRemoteListenPortBusy(err error) bool {
+	if err == nil {
+		return false
+	}
+	text := err.Error()
+	return strings.Contains(text, remoteListenPortBusyMarker) ||
+		(strings.Contains(text, "порт подключения") && strings.Contains(text, "уже занят"))
 }
 
 func (i Installer) EnsureRemoteInstalled(ctx context.Context, ssh sshclient.Client, target sshclient.Target) error {

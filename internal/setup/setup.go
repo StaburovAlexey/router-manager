@@ -332,6 +332,9 @@ func configureForeign(ctx context.Context, paths config.Paths, runner shell.Runn
 		if foreignAction != "use" {
 			added, err = service.Add(ctx, foreignServer)
 			if err != nil {
+				if shouldReenterServerDetails(err, reader, out, "выходного сервера") {
+					continue
+				}
 				return foreignServer, err
 			}
 			return added, nil
@@ -439,11 +442,17 @@ func (e hostKeyScanError) Unwrap() error {
 
 func shouldReenterServerDetails(err error, reader *bufio.Reader, out io.Writer, label string) bool {
 	var scanErr hostKeyScanError
-	if !errors.As(err, &scanErr) {
-		return false
+	if errors.As(err, &scanErr) {
+		fmt.Fprintf(out, "\nНе удалось проверить SSH host key %s. Обычно это неверный IP, SSH-порт или недоступный сервер.\n", label)
+		return confirm.AskYesNo(reader, out, "Ввести данные "+label+" заново?")
 	}
-	fmt.Fprintf(out, "\nНе удалось проверить SSH host key %s. Обычно это неверный IP, SSH-порт или недоступный сервер.\n", label)
-	return confirm.AskYesNo(reader, out, "Ввести данные "+label+" заново?")
+	var portErr singbox.RemoteListenPortBusyError
+	if errors.As(err, &portErr) {
+		fmt.Fprintf(out, "\nПорт подключения %d уже занят для %s.\n", portErr.Port, label)
+		fmt.Fprintln(out, "Выберите другой порт подключения или освободите порт вручную, если старый сервис больше не нужен.")
+		return confirm.AskYesNo(reader, out, "Ввести данные "+label+" заново?")
+	}
+	return false
 }
 
 func printManualSSHInstructions(out io.Writer, target sshclient.Target) {
