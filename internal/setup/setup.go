@@ -3,6 +3,7 @@ package setup
 import (
 	"bufio"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -100,15 +101,22 @@ func (s Service) Run(ctx context.Context) error {
 	}
 
 	printStep(s.Out, 4, 5, "Входной сервер")
-	cfg.RUServer.IP = askRequired(reader, s.Out, "IP входного сервера", cfg.RUServer.IP)
-	cfg.RUServer.SSHUser = ask(reader, s.Out, "SSH user входного сервера", defaultString(cfg.RUServer.SSHUser, "root"))
-	cfg.RUServer.SSHPort = askInt(reader, s.Out, "SSH port входного сервера", defaultInt(cfg.RUServer.SSHPort, 22))
-	cfg.RUServer.TunnelPort = askInt(reader, s.Out, "порт подключения входного сервера", defaultInt(cfg.RUServer.TunnelPort, 443))
-
 	ssh := sshclient.Client{Runner: s.Runner}
-	ruTarget := sshclient.Target{User: cfg.RUServer.SSHUser, IP: cfg.RUServer.IP, Port: cfg.RUServer.SSHPort}
-	if err := ensureSSHAccess(ctx, ssh, ruTarget, "входной сервер", reader, s.Out); err != nil {
-		return err
+	var ruTarget sshclient.Target
+	for {
+		cfg.RUServer.IP = askRequired(reader, s.Out, "IP входного сервера", cfg.RUServer.IP)
+		cfg.RUServer.SSHUser = ask(reader, s.Out, "SSH user входного сервера", defaultString(cfg.RUServer.SSHUser, "root"))
+		cfg.RUServer.SSHPort = askInt(reader, s.Out, "SSH port входного сервера", defaultInt(cfg.RUServer.SSHPort, 22))
+		cfg.RUServer.TunnelPort = askInt(reader, s.Out, "порт подключения входного сервера", defaultInt(cfg.RUServer.TunnelPort, 443))
+
+		ruTarget = sshclient.Target{User: cfg.RUServer.SSHUser, IP: cfg.RUServer.IP, Port: cfg.RUServer.SSHPort}
+		if err := ensureSSHAccess(ctx, ssh, ruTarget, "входной сервер", reader, s.Out); err != nil {
+			if shouldReenterServerDetails(err, reader, s.Out, "входного сервера") {
+				continue
+			}
+			return err
+		}
+		break
 	}
 	if findings := preflight.CollectRemote(ctx, ssh, ruTarget, "входной сервер"); len(findings) > 0 {
 		fmt.Fprintln(s.Out, preflight.Format(findings))
@@ -278,60 +286,65 @@ func configureForeign(ctx context.Context, paths config.Paths, runner shell.Runn
 	if index > 0 {
 		defaultName = fmt.Sprintf("out-%d", index+1)
 	}
-	foreignServer := config.ForeignServer{
-		Name:       ask(reader, out, "Имя выходного сервера", defaultName),
-		IP:         askRequired(reader, out, "IP выходного сервера", ""),
-		SSHUser:    ask(reader, out, "SSH user выходного сервера", "root"),
-		SSHPort:    askInt(reader, out, "SSH port выходного сервера", 22),
-		TunnelPort: askInt(reader, out, "порт подключения выходного сервера", 443),
-	}
-	foreignAction, existingForeign, err := resolveForeignConflict(paths, &foreignServer, reader, out)
-	if err != nil {
-		return foreignServer, err
-	}
-	added := foreignServer
-	if foreignAction == "use" {
-		added = existingForeign
-		foreignServer = existingForeign
-	}
-	foreignTarget := sshclient.Target{User: foreignServer.SSHUser, IP: foreignServer.IP, Port: foreignServer.SSHPort}
-	if err := ensureSSHAccess(ctx, ssh, foreignTarget, "выходной сервер", reader, out); err != nil {
-		return foreignServer, err
-	}
-	if findings := preflight.CollectRemote(ctx, ssh, foreignTarget, "выходной сервер"); len(findings) > 0 && foreignAction != "use" {
-		fmt.Fprintln(out, preflight.Format(findings))
-		if !confirm.AskYesNo(reader, out, "Подтвердите перезапись выходного сервера") {
-			return foreignServer, fmt.Errorf("настройка остановлена: перезапись выходного сервера не подтверждена")
+	for {
+		foreignServer := config.ForeignServer{
+			Name:       ask(reader, out, "Имя выходного сервера", defaultName),
+			IP:         askRequired(reader, out, "IP выходного сервера", ""),
+			SSHUser:    ask(reader, out, "SSH user выходного сервера", "root"),
+			SSHPort:    askInt(reader, out, "SSH port выходного сервера", 22),
+			TunnelPort: askInt(reader, out, "порт подключения выходного сервера", 443),
 		}
-	}
-	service := foreign.Service{
-		Paths:      paths,
-		Runner:     runner,
-		SSH:        ssh,
-		SNI:        reality.Selector{},
-		UUID:       cfg.Reality.UUID,
-		PrivateKey: ruPrivate,
-	}
-	if foreignAction == "replace" {
-		if err := removeForeignLocal(paths, foreignServer.Name); err != nil {
-			return foreignServer, err
-		}
-	}
-	if foreignAction != "use" {
-		added, err = service.Add(ctx, foreignServer)
+		foreignAction, existingForeign, err := resolveForeignConflict(paths, &foreignServer, reader, out)
 		if err != nil {
 			return foreignServer, err
 		}
+		added := foreignServer
+		if foreignAction == "use" {
+			added = existingForeign
+			foreignServer = existingForeign
+		}
+		foreignTarget := sshclient.Target{User: foreignServer.SSHUser, IP: foreignServer.IP, Port: foreignServer.SSHPort}
+		if err := ensureSSHAccess(ctx, ssh, foreignTarget, "выходной сервер", reader, out); err != nil {
+			if shouldReenterServerDetails(err, reader, out, "выходного сервера") {
+				continue
+			}
+			return foreignServer, err
+		}
+		if findings := preflight.CollectRemote(ctx, ssh, foreignTarget, "выходной сервер"); len(findings) > 0 && foreignAction != "use" {
+			fmt.Fprintln(out, preflight.Format(findings))
+			if !confirm.AskYesNo(reader, out, "Подтвердите перезапись выходного сервера") {
+				return foreignServer, fmt.Errorf("настройка остановлена: перезапись выходного сервера не подтверждена")
+			}
+		}
+		service := foreign.Service{
+			Paths:      paths,
+			Runner:     runner,
+			SSH:        ssh,
+			SNI:        reality.Selector{},
+			UUID:       cfg.Reality.UUID,
+			PrivateKey: ruPrivate,
+		}
+		if foreignAction == "replace" {
+			if err := removeForeignLocal(paths, foreignServer.Name); err != nil {
+				return foreignServer, err
+			}
+		}
+		if foreignAction != "use" {
+			added, err = service.Add(ctx, foreignServer)
+			if err != nil {
+				return foreignServer, err
+			}
+			return added, nil
+		}
+		servers, err := config.LoadForeign(paths)
+		if err != nil {
+			return added, err
+		}
+		if err := service.RefreshRU(ctx, servers, ""); err != nil {
+			return added, err
+		}
 		return added, nil
 	}
-	servers, err := config.LoadForeign(paths)
-	if err != nil {
-		return added, err
-	}
-	if err := service.RefreshRU(ctx, servers, ""); err != nil {
-		return added, err
-	}
-	return added, nil
 }
 
 func generateRemoteRealityKeypair(ctx context.Context, ssh sshclient.Client, target sshclient.Target) (string, string, error) {
@@ -389,7 +402,7 @@ func ensureSSHAccess(ctx context.Context, ssh sshclient.Client, target sshclient
 	}
 	hostKey, err := sshclient.ScanHostKey(ctx, target)
 	if err != nil {
-		return fmt.Errorf("не удалось получить host key %s: %w", label, err)
+		return hostKeyScanError{label: label, err: err}
 	}
 	if err := sshclient.TrustHostKey(ctx, target, hostKey); err != nil {
 		return fmt.Errorf("не удалось сохранить host key %s: %w", label, err)
@@ -409,6 +422,28 @@ func ensureSSHAccess(ctx context.Context, ssh sshclient.Client, target sshclient
 		return waitForSSH(ctx, ssh, target, label, reader, out)
 	}
 	return waitForSSH(ctx, ssh, target, label, reader, out)
+}
+
+type hostKeyScanError struct {
+	label string
+	err   error
+}
+
+func (e hostKeyScanError) Error() string {
+	return fmt.Sprintf("не удалось получить host key %s: %v", e.label, e.err)
+}
+
+func (e hostKeyScanError) Unwrap() error {
+	return e.err
+}
+
+func shouldReenterServerDetails(err error, reader *bufio.Reader, out io.Writer, label string) bool {
+	var scanErr hostKeyScanError
+	if !errors.As(err, &scanErr) {
+		return false
+	}
+	fmt.Fprintf(out, "\nНе удалось проверить SSH host key %s. Обычно это неверный IP, SSH-порт или недоступный сервер.\n", label)
+	return confirm.AskYesNo(reader, out, "Ввести данные "+label+" заново?")
 }
 
 func printManualSSHInstructions(out io.Writer, target sshclient.Target) {

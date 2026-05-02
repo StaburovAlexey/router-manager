@@ -3,6 +3,7 @@ package setup
 import (
 	"bufio"
 	"bytes"
+	"errors"
 	"strings"
 	"testing"
 )
@@ -46,5 +47,42 @@ func TestAskRequiredReturnsEnteredValue(t *testing.T) {
 
 	if value != "198.51.100.20" {
 		t.Fatalf("askRequired() = %q, want entered value", value)
+	}
+}
+
+func TestShouldReenterServerDetailsForHostKeyScanError(t *testing.T) {
+	reader := bufio.NewReader(strings.NewReader("да\n"))
+	var out bytes.Buffer
+	err := hostKeyScanError{label: "входной сервер", err: errors.New("scan failed")}
+
+	if !shouldReenterServerDetails(err, reader, &out, "входного сервера") {
+		t.Fatal("expected yes answer to request re-entering server details")
+	}
+	for _, want := range []string{"Не удалось проверить SSH host key входного сервера", "Ввести данные входного сервера заново?"} {
+		if !strings.Contains(out.String(), want) {
+			t.Fatalf("missing %q in output:\n%s", want, out.String())
+		}
+	}
+}
+
+func TestShouldReenterServerDetailsCanDecline(t *testing.T) {
+	reader := bufio.NewReader(strings.NewReader("нет\n"))
+	var out bytes.Buffer
+	err := hostKeyScanError{label: "выходной сервер", err: errors.New("scan failed")}
+
+	if shouldReenterServerDetails(err, reader, &out, "выходного сервера") {
+		t.Fatal("expected no answer to decline re-entering server details")
+	}
+}
+
+func TestShouldReenterServerDetailsIgnoresOtherErrors(t *testing.T) {
+	reader := bufio.NewReader(strings.NewReader("да\n"))
+	var out bytes.Buffer
+
+	if shouldReenterServerDetails(errors.New("permission denied"), reader, &out, "входного сервера") {
+		t.Fatal("non host key scan errors must not request server details again")
+	}
+	if out.Len() != 0 {
+		t.Fatalf("unexpected output for ignored error:\n%s", out.String())
 	}
 }
