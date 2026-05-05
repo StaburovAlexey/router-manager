@@ -45,3 +45,20 @@ func TestWriteSensitiveTextCreatesParent(t *testing.T) {
 		t.Fatalf("unexpected contents: %q", string(data))
 	}
 }
+
+func TestLoadMigratesOldCurrentModeToRouting(t *testing.T) {
+	paths := NewPaths(t.TempDir())
+	if err := WriteSensitiveText(paths.Config, `{"current_mode":"tunnel","mini_pc":{"ssid":"x"}}`+"\n"); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := Load(paths)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.Routing.DefaultRoute != DefaultRouteVPN {
+		t.Fatalf("DefaultRoute = %q, want vpn", cfg.Routing.DefaultRoute)
+	}
+	if cfg.CurrentMode != "tunnel" {
+		t.Fatalf("CurrentMode = %q, want tunnel", cfg.CurrentMode)
+	}
+}

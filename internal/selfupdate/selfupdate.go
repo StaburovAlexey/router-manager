@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"router-manager/internal/config"
+	"router-manager/internal/shell"
 	"router-manager/internal/system"
 )
 
@@ -35,6 +36,7 @@ type Service struct {
 	Client         *http.Client
 	Out            io.Writer
 	CheckBinary    func(context.Context, string) error
+	Runner         shell.Runner
 }
 
 type release struct {
@@ -129,9 +131,12 @@ func (s Service) Run(ctx context.Context) error {
 		}
 		return fmt.Errorf("обновлённый бинарник не запускается, backup восстановлен: %w", err)
 	}
+	if err := s.runPostUpdate(ctx, target); err != nil {
+		return err
+	}
 
 	fmt.Fprintf(out, "Обновление установлено: %s\n", target)
-	fmt.Fprintln(out, "Закройте меню и снова запустите: sudo router-manager")
+	fmt.Fprintln(out, "Служебные настройки обновлены. Закройте меню и снова запустите: sudo router-manager")
 	return nil
 }
 
@@ -206,6 +211,14 @@ func (s Service) checkBinary(ctx context.Context, path string) error {
 		return fmt.Errorf("%s --version: %w: %s", path, err, strings.TrimSpace(string(out)))
 	}
 	return nil
+}
+
+func (s Service) runPostUpdate(ctx context.Context, target string) error {
+	runner := s.Runner
+	if runner == nil {
+		runner = shell.RealRunner{}
+	}
+	return runner.Run(ctx, target, "post-update")
 }
 
 func binaryAssetName(goos string, goarch string) (string, error) {

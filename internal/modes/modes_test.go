@@ -56,7 +56,7 @@ func TestEnableDirectEnablesIPv4Forwarding(t *testing.T) {
 	}
 }
 
-func TestEnableSelectiveUsesSingBoxAndTunnelFirewall(t *testing.T) {
+func TestEnableSelectiveUsesSingBoxAndDirectFirewall(t *testing.T) {
 	paths := testModePaths(t)
 	cfg := testModeConfig()
 	cfg.CurrentMode = "direct"
@@ -88,8 +88,8 @@ func TestEnableSelectiveUsesSingBoxAndTunnelFirewall(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(string(nftData), `oifname "tun0" accept`) || !strings.Contains(string(nftData), `iifname "wlan0" drop`) {
-		t.Fatalf("selective mode must use tunnel firewall shape:\n%s", string(nftData))
+	if !strings.Contains(string(nftData), `iifname "wlan0" accept`) || strings.Contains(string(nftData), `iifname "wlan0" drop`) {
+		t.Fatalf("selective mode must use direct firewall shape:\n%s", string(nftData))
 	}
 }
 

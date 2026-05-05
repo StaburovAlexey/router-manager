@@ -19,6 +19,7 @@ type Paths struct {
 	InfraRules       string
 	CustomDirect     string
 	CustomProxy      string
+	RUGeoIP          string
 	ModesDir         string
 	TunnelMode       string
 	DirectMode       string
@@ -52,6 +53,7 @@ func NewPaths(base string) Paths {
 		InfraRules:       filepath.Join(rules, "tunnel-infra.json"),
 		CustomDirect:     filepath.Join(rules, "custom-direct.json"),
 		CustomProxy:      filepath.Join(rules, "custom-proxy.json"),
+		RUGeoIP:          filepath.Join(rules, "geoip-ru.json"),
 		ModesDir:         modes,
 		TunnelMode:       filepath.Join(modes, "tunnel.json"),
 		DirectMode:       filepath.Join(modes, "direct.json"),

@@ -6,6 +6,7 @@ type Config struct {
 	RUServer      RUServerConfig `json:"ru_server"`
 	Reality       RealityRuntime `json:"reality,omitempty"`
 	RoutingPolicy RoutingPolicy  `json:"tunnel_policy"`
+	Routing       RoutingConfig  `json:"routing"`
 	CurrentMode   string         `json:"current_mode"`
 }
 
@@ -40,6 +41,22 @@ type RoutingPolicy struct {
 	Mode                string `json:"mode"`
 	CustomDirectEnabled bool   `json:"custom_direct_enabled"`
 }
+
+type RoutingConfig struct {
+	DefaultRoute            string `json:"default_route"`
+	RUDomainsDirectEnabled  bool   `json:"ru_domains_direct_enabled"`
+	RUGeoIPDirectEnabled    bool   `json:"ru_geoip_direct_enabled"`
+	GeoIPSource             string `json:"geoip_source"`
+	GeoIPLastUpdate         string `json:"geoip_last_update,omitempty"`
+	GeoIPLastError          string `json:"geoip_last_error,omitempty"`
+	GeoIPUpdateTimerEnabled bool   `json:"geoip_update_timer_enabled"`
+}
+
+const (
+	DefaultRouteVPN    = "vpn"
+	DefaultRouteDirect = "direct"
+	DefaultGeoIPSource = "https://www.ipdeny.com/ipblocks/data/aggregated/ru-aggregated.zone"
+)
 
 type ForeignServers struct {
 	Servers []ForeignServer `json:"servers"`
@@ -92,6 +109,55 @@ func DefaultConfig() Config {
 			Mode:                "rule_set",
 			CustomDirectEnabled: true,
 		},
+		Routing: RoutingConfig{
+			DefaultRoute:            DefaultRouteDirect,
+			RUDomainsDirectEnabled:  true,
+			RUGeoIPDirectEnabled:    true,
+			GeoIPSource:             DefaultGeoIPSource,
+			GeoIPUpdateTimerEnabled: true,
+		},
 		CurrentMode: "direct",
 	}
+}
+
+func NormalizeConfig(cfg Config) Config {
+	if cfg.MiniPC.SSID == "" {
+		def := DefaultConfig()
+		if cfg.MiniPC.LANCIDR == "" {
+			cfg.MiniPC.LANCIDR = def.MiniPC.LANCIDR
+		}
+		if cfg.MiniPC.LANGateway == "" {
+			cfg.MiniPC.LANGateway = def.MiniPC.LANGateway
+		}
+	}
+	if cfg.Routing.DefaultRoute == "" {
+		switch cfg.CurrentMode {
+		case "tunnel":
+			cfg.Routing.DefaultRoute = DefaultRouteVPN
+		case "selective", "direct":
+			cfg.Routing.DefaultRoute = DefaultRouteDirect
+		default:
+			cfg.Routing.DefaultRoute = DefaultRouteDirect
+		}
+	}
+	if cfg.Routing.DefaultRoute != DefaultRouteVPN {
+		cfg.Routing.DefaultRoute = DefaultRouteDirect
+	}
+	if cfg.Routing.GeoIPSource == "" {
+		cfg.Routing.GeoIPSource = DefaultGeoIPSource
+	}
+	if !cfg.Routing.RUDomainsDirectEnabled && !cfg.Routing.RUGeoIPDirectEnabled && !cfg.Routing.GeoIPUpdateTimerEnabled {
+		cfg.Routing.RUDomainsDirectEnabled = true
+		cfg.Routing.RUGeoIPDirectEnabled = true
+		cfg.Routing.GeoIPUpdateTimerEnabled = true
+	}
+	cfg.CurrentMode = CurrentModeForDefaultRoute(cfg.Routing.DefaultRoute)
+	return cfg
+}
+
+func CurrentModeForDefaultRoute(route string) string {
+	if route == DefaultRouteVPN {
+		return "tunnel"
+	}
+	return "selective"
 }

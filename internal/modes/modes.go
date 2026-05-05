@@ -17,14 +17,32 @@ import (
 var requireRoot = system.RequireRoot
 
 func EnableTunnel(ctx context.Context, runner shell.Runner, paths config.Paths) error {
-	return enableSingBoxMode(ctx, runner, paths, "tunnel")
+	return SetDefaultRoute(ctx, runner, paths, config.DefaultRouteVPN)
 }
 
 func EnableSelective(ctx context.Context, runner shell.Runner, paths config.Paths) error {
-	return enableSingBoxMode(ctx, runner, paths, "selective")
+	return SetDefaultRoute(ctx, runner, paths, config.DefaultRouteDirect)
 }
 
-func enableSingBoxMode(ctx context.Context, runner shell.Runner, paths config.Paths, mode string) error {
+func SetDefaultRoute(ctx context.Context, runner shell.Runner, paths config.Paths, defaultRoute string) error {
+	if defaultRoute != config.DefaultRouteVPN && defaultRoute != config.DefaultRouteDirect {
+		return fmt.Errorf("неизвестный основной маршрут: %s", defaultRoute)
+	}
+	return enableSingBoxMode(ctx, runner, paths, defaultRoute)
+}
+
+func Reapply(ctx context.Context, runner shell.Runner, paths config.Paths) error {
+	cfg, err := config.Load(paths)
+	if err != nil {
+		return err
+	}
+	if cfg.Routing.DefaultRoute == config.DefaultRouteVPN || cfg.Routing.DefaultRoute == config.DefaultRouteDirect {
+		return enableSingBoxMode(ctx, runner, paths, cfg.Routing.DefaultRoute)
+	}
+	return enableSingBoxMode(ctx, runner, paths, config.DefaultRouteDirect)
+}
+
+func enableSingBoxMode(ctx context.Context, runner shell.Runner, paths config.Paths, defaultRoute string) error {
 	if err := requireRoot(); err != nil {
 		return err
 	}
@@ -44,17 +62,22 @@ func enableSingBoxMode(ctx context.Context, runner shell.Runner, paths config.Pa
 	if err := network.EnableIPv4Forwarding(ctx, runner, paths.SysctlConf); err != nil {
 		return err
 	}
-	data, err := singbox.RenderLocalForMode(cfg, paths, mode)
+	cfg.Routing.DefaultRoute = defaultRoute
+	cfg.CurrentMode = config.CurrentModeForDefaultRoute(defaultRoute)
+	data, err := singbox.RenderLocalForMode(cfg, paths, defaultRoute)
 	if err != nil {
 		return err
 	}
 	if err := singbox.ApplyConfig(ctx, runner, paths, data); err != nil {
 		return err
 	}
-	if err := nftables.Apply(ctx, runner, paths, cfg, mode); err != nil {
+	firewallMode := "direct"
+	if defaultRoute == config.DefaultRouteVPN {
+		firewallMode = "tunnel"
+	}
+	if err := nftables.Apply(ctx, runner, paths, cfg, firewallMode); err != nil {
 		return err
 	}
-	cfg.CurrentMode = mode
 	if err := config.Save(paths, cfg); err != nil {
 		return err
 	}
@@ -63,11 +86,14 @@ func enableSingBoxMode(ctx context.Context, runner shell.Runner, paths config.Pa
 }
 
 func EnableDirect(ctx context.Context, runner shell.Runner, paths config.Paths) error {
-	if err := requireRoot(); err != nil {
-		return err
-	}
 	cfg, err := config.Load(paths)
 	if err != nil {
+		return err
+	}
+	if cfg.RUServer.IP != "" && cfg.Reality.SNI != "" && cfg.Reality.PublicKey != "" && cfg.Reality.ShortID != "" {
+		return SetDefaultRoute(ctx, runner, paths, config.DefaultRouteDirect)
+	}
+	if err := requireRoot(); err != nil {
 		return err
 	}
 	if err := network.EnableIPv4Forwarding(ctx, runner, paths.SysctlConf); err != nil {
@@ -77,6 +103,7 @@ func EnableDirect(ctx context.Context, runner shell.Runner, paths config.Paths) 
 	if err := nftables.Apply(ctx, runner, paths, cfg, "direct"); err != nil {
 		return err
 	}
+	cfg.Routing.DefaultRoute = config.DefaultRouteDirect
 	cfg.CurrentMode = "direct"
 	return config.Save(paths, cfg)
 }

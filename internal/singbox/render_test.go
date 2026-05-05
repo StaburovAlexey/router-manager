@@ -2,6 +2,7 @@ package singbox
 
 import (
 	"encoding/json"
+	"os"
 	"strings"
 	"testing"
 
@@ -122,6 +123,32 @@ func TestRenderLocalTunnelRoutesDefaultToProxyAndCustomDirectToDirect(t *testing
 	dns := payload["dns"].(map[string]any)
 	if dns["final"] != "remote" {
 		t.Fatalf("dns.final = %v, want remote:\n%s", dns["final"], string(data))
+	}
+}
+
+func TestRenderLocalVPNRouteAddsRussianAutoDirectRules(t *testing.T) {
+	cfg := baseConfig()
+	cfg.Routing.DefaultRoute = config.DefaultRouteVPN
+	paths := config.NewPaths(t.TempDir())
+	if err := os.MkdirAll(paths.RulesDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(paths.RUGeoIP, []byte(`{"version":3,"rules":[{"ip_cidr":["192.0.2.0/24"]}]}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	data, err := RenderLocalForMode(cfg, paths, config.DefaultRouteVPN)
+	if err != nil {
+		t.Fatal(err)
+	}
+	payload := decodeConfig(t, data)
+	if !hasRuleSet(payload, "geoip-ru", paths.RUGeoIP) {
+		t.Fatalf("missing geoip-ru rule-set:\n%s", string(data))
+	}
+	if !hasRouteRule(payload, "geoip-ru", "direct") {
+		t.Fatalf("missing geoip-ru direct route:\n%s", string(data))
+	}
+	if !hasDomainSuffixRoute(payload, "ru", "direct") || !hasDNSDomainSuffix(payload, "ru", "local") {
+		t.Fatalf("missing ru domain direct rules:\n%s", string(data))
 	}
 }
 
@@ -328,6 +355,46 @@ func hasDNSRule(payload map[string]any, ruleSet string, server string) bool {
 		rule := item.(map[string]any)
 		if rule["rule_set"] == ruleSet && rule["server"] == server {
 			return true
+		}
+	}
+	return false
+}
+
+func hasDomainSuffixRoute(payload map[string]any, suffix string, outbound string) bool {
+	route := payload["route"].(map[string]any)
+	for _, item := range route["rules"].([]any) {
+		rule := item.(map[string]any)
+		if rule["outbound"] != outbound {
+			continue
+		}
+		suffixes, ok := rule["domain_suffix"].([]any)
+		if !ok {
+			continue
+		}
+		for _, value := range suffixes {
+			if value == suffix {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func hasDNSDomainSuffix(payload map[string]any, suffix string, server string) bool {
+	dns := payload["dns"].(map[string]any)
+	for _, item := range dns["rules"].([]any) {
+		rule := item.(map[string]any)
+		if rule["server"] != server {
+			continue
+		}
+		suffixes, ok := rule["domain_suffix"].([]any)
+		if !ok {
+			continue
+		}
+		for _, value := range suffixes {
+			if value == suffix {
+				return true
+			}
 		}
 	}
 	return false

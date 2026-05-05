@@ -1,10 +1,13 @@
 package selfupdate
 
 import (
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"strings"
 	"testing"
+
+	"router-manager/internal/shell"
 )
 
 func TestBinaryAssetName(t *testing.T) {
@@ -45,5 +48,16 @@ func TestSameVersion(t *testing.T) {
 	}
 	if sameVersion("dev", "v0.1.0") {
 		t.Fatal("dev must not be treated as latest")
+	}
+}
+
+func TestRunPostUpdateCallsUpdatedBinary(t *testing.T) {
+	runner := &shell.DryRunner{}
+	svc := Service{Runner: runner}
+	if err := svc.runPostUpdate(context.Background(), "/tmp/router-manager"); err != nil {
+		t.Fatal(err)
+	}
+	if len(runner.Calls) != 1 || runner.Calls[0] != "/tmp/router-manager post-update" {
+		t.Fatalf("unexpected calls: %#v", runner.Calls)
 	}
 }

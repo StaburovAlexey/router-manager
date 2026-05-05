@@ -77,12 +77,14 @@ func TestTUIForeignServerItemsShowsEmptyState(t *testing.T) {
 	assertMenuItem(t, items, "Назад", "back")
 }
 
-func TestTUIInternetMenuShowsThreeRoutingModes(t *testing.T) {
+func TestTUIInternetMenuShowsSingleRouteSwitch(t *testing.T) {
 	items := testModel().setMenu("internet").items()
 
-	assertMenuItem(t, items, "Весь трафик через VPN", "tunnel")
-	assertMenuItem(t, items, "Прямой интернет, выбранные сайты через VPN", "selective")
-	assertMenuItem(t, items, "Полностью прямой интернет / выключить VPN", "direct")
+	assertMenuItem(t, items, "Пропускать весь трафик через VPN", "route:vpn")
+	assertMenuItem(t, items, "Отключить пропуск всего трафика через VPN", "route:direct")
+	assertMenuItem(t, items, "GeoIP Россия", "menu:geoip")
+	assertNoMenuTitle(t, items, "Весь трафик через VPN")
+	assertNoMenuTitle(t, items, "Прямой интернет, выбранные сайты через VPN")
 }
 
 func TestTUIRoutingRulesMenuSeparatesDirectAndProxyLists(t *testing.T) {
@@ -90,8 +92,9 @@ func TestTUIRoutingRulesMenuSeparatesDirectAndProxyLists(t *testing.T) {
 	assertMenuItem(t, mainItems, "Правила маршрутизации", "menu:route-rules")
 
 	items := testModel().setMenu("route-rules").items()
-	assertMenuItem(t, items, "Исключения из VPN", "menu:direct-rules")
-	assertMenuItem(t, items, "Сайты через VPN", "menu:proxy-rules")
+	assertMenuItem(t, items, "Сайты и IP напрямую", "menu:direct-rules")
+	assertMenuItem(t, items, "Сайты и IP через VPN", "menu:proxy-rules")
+	assertMenuItem(t, items, "Автоправила России", "menu:geoip")
 
 	proxyItems := testModel().setMenu("proxy-rules").items()
 	assertMenuItem(t, proxyItems, "Добавить сайт или IP через VPN", "proxy-add:auto")

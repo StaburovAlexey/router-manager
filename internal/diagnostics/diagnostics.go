@@ -15,6 +15,7 @@ import (
 
 type Status struct {
 	Mode            string
+	DefaultRoute    string
 	WANInterface    string
 	APInterface     string
 	SSID            string
@@ -42,6 +43,7 @@ func Collect(ctx context.Context, runner shell.Runner, paths config.Paths) (Stat
 	}
 	status := Status{
 		Mode:            cfg.CurrentMode,
+		DefaultRoute:    cfg.Routing.DefaultRoute,
 		WANInterface:    cfg.MiniPC.WANInterface,
 		APInterface:     cfg.MiniPC.APInterface,
 		SSID:            cfg.MiniPC.SSID,
@@ -141,6 +143,18 @@ func wifiSummary(status Status) string {
 func routeSummary(status Status) string {
 	if status.IPv4Forwarding != "ok" {
 		return "ошибка: " + status.IPv4Forwarding
+	}
+	if status.DefaultRoute == config.DefaultRouteVPN {
+		if status.SingBox == "active" {
+			return "основной маршрут через VPN"
+		}
+		return "ошибка"
+	}
+	if status.DefaultRoute == config.DefaultRouteDirect {
+		if status.SingBox == "active" {
+			return "основной маршрут напрямую, выбранные сайты через VPN"
+		}
+		return "полностью прямой интернет"
 	}
 	switch status.Mode {
 	case "tunnel":

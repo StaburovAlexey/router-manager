@@ -33,10 +33,11 @@ func Load(paths Paths) (Config, error) {
 	if err := json.Unmarshal(data, &cfg); err != nil {
 		return cfg, fmt.Errorf("config.json содержит некорректный JSON: %w", err)
 	}
-	return cfg, nil
+	return NormalizeConfig(cfg), nil
 }
 
 func Save(paths Paths, cfg Config) error {
+	cfg = NormalizeConfig(cfg)
 	return writeJSON(paths.Config, cfg, 0o600)
 }
 

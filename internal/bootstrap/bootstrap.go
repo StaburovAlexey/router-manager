@@ -77,6 +77,9 @@ func (s Service) Run(ctx context.Context) error {
 	if err := installSelf("/usr/local/sbin/router-manager"); err != nil {
 		return err
 	}
+	if err := InstallGeoIPTimer(ctx, s.Runner); err != nil {
+		return err
+	}
 	if _, err := exec.LookPath("router-manager"); err != nil {
 		if _, statErr := os.Stat("/usr/local/sbin/router-manager"); statErr != nil {
 			return fmt.Errorf("router-manager не найден после установки: %w", err)
@@ -84,6 +87,43 @@ func (s Service) Run(ctx context.Context) error {
 	}
 	fmt.Fprintln(s.Stdout, "Готово. Если настройка ещё не выполнена, запустите sudo router-manager.")
 	return nil
+}
+
+func InstallGeoIPTimer(ctx context.Context, runner shell.Runner) error {
+	service := `[Unit]
+Description=Update Router Manager RU GeoIP rules
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/router-manager geoip update
+`
+	timer := `[Unit]
+Description=Daily Router Manager RU GeoIP update
+
+[Timer]
+OnCalendar=daily
+Persistent=true
+RandomizedDelaySec=30m
+
+[Install]
+WantedBy=timers.target
+`
+	if err := config.WriteSensitiveText("/etc/systemd/system/router-manager-geoip-update.service", service); err != nil {
+		return err
+	}
+	if err := os.Chmod("/etc/systemd/system/router-manager-geoip-update.service", 0o644); err != nil {
+		return err
+	}
+	if err := config.WriteSensitiveText("/etc/systemd/system/router-manager-geoip-update.timer", timer); err != nil {
+		return err
+	}
+	if err := os.Chmod("/etc/systemd/system/router-manager-geoip-update.timer", 0o644); err != nil {
+		return err
+	}
+	if err := runner.Run(ctx, "systemctl", "daemon-reload"); err != nil {
+		return err
+	}
+	return runner.Run(ctx, "systemctl", "enable", "--now", "router-manager-geoip-update.timer")
 }
 
 func SeedFiles(paths config.Paths) error {

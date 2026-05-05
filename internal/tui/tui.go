@@ -15,6 +15,7 @@ import (
 	"router-manager/internal/confirm"
 	"router-manager/internal/diagnostics"
 	"router-manager/internal/foreign"
+	"router-manager/internal/geoip"
 	"router-manager/internal/modes"
 	"router-manager/internal/restore"
 	"router-manager/internal/ru"
@@ -365,9 +366,10 @@ func (m model) items() []item {
 	case "internet":
 		return []item{
 			{"Проверить состояние интернета", "status"},
-			{"Весь трафик через VPN", "tunnel"},
-			{"Прямой интернет, выбранные сайты через VPN", "selective"},
-			{"Полностью прямой интернет / выключить VPN", "direct"},
+			{"Пропускать весь трафик через VPN", "route:vpn"},
+			{"Отключить пропуск всего трафика через VPN", "route:direct"},
+			{"Правила маршрутизации", "menu:route-rules"},
+			{"GeoIP Россия", "menu:geoip"},
 			{"Выбрать выходной сервер", "menu:foreign-switch"},
 			{"Автоматически выбирать выходной сервер", "ru-auto"},
 			{"Назад", "back"},
@@ -381,9 +383,20 @@ func (m model) items() []item {
 		}
 	case "route-rules":
 		return []item{
-			{"Исключения из VPN", "menu:direct-rules"},
-			{"Сайты через VPN", "menu:proxy-rules"},
+			{"Сайты и IP напрямую", "menu:direct-rules"},
+			{"Сайты и IP через VPN", "menu:proxy-rules"},
+			{"Автоправила России", "menu:geoip"},
 			{"Назад", "back"},
+		}
+	case "geoip":
+		return []item{
+			{"Показать статус GeoIP России", "geoip-status"},
+			{"Обновить GeoIP сейчас", "geoip-update"},
+			{"Включить российские IP напрямую", "geoip-enable"},
+			{"Выключить российские IP напрямую", "geoip-disable"},
+			{"Включить домены .ru/.рф/.su напрямую", "ru-domains-enable"},
+			{"Выключить домены .ru/.рф/.su напрямую", "ru-domains-disable"},
+			{"Назад", "menu:route-rules"},
 		}
 	case "direct-rules":
 		return []item{
@@ -510,6 +523,8 @@ func (m model) menuTitle() string {
 		return "исключения из VPN"
 	case "proxy-rules":
 		return "сайты через VPN"
+	case "geoip":
+		return "GeoIP Россия"
 	case "ru":
 		return "входной сервер"
 	case "foreign":
@@ -543,6 +558,14 @@ func (m model) run(action string) model {
 	}
 	if strings.HasPrefix(action, "menu:") {
 		return m.setMenu(strings.TrimPrefix(action, "menu:"))
+	}
+	if strings.HasPrefix(action, "route:") {
+		route := strings.TrimPrefix(action, "route:")
+		err := modes.SetDefaultRoute(m.ctx, m.runner, m.paths, route)
+		if route == config.DefaultRouteVPN {
+			return m.withResult("Основной маршрут через VPN включён.", err)
+		}
+		return m.withResult("Основной маршрут напрямую включён.", err)
 	}
 	if strings.HasPrefix(action, "direct-add:") || strings.HasPrefix(action, "proxy-add:") {
 		spec := m.ruleSetSpecForAction(action)
@@ -601,6 +624,35 @@ func (m model) run(action string) model {
 	case "direct":
 		err := modes.EnableDirect(m.ctx, m.runner, m.paths)
 		return m.withResult("Полностью прямой интернет включён.", err)
+	case "geoip-status":
+		out, err := (geoip.Service{Paths: m.paths}).Status()
+		return m.withResult(out, err)
+	case "geoip-update":
+		result, err := (geoip.Service{Paths: m.paths}).Update(m.ctx)
+		if err == nil && result.Changed && localSingBoxConfigExists(m.paths) {
+			err = modes.Reapply(m.ctx, m.runner, m.paths)
+		}
+		message := fmt.Sprintf("GeoIP Россия обновлён: %d CIDR", result.Count)
+		if err == nil && !result.Changed {
+			message += " (без изменений)"
+		}
+		return m.withResult(message, err)
+	case "geoip-enable":
+		return m.applyRouting("GeoIP Россия", func(cfg *config.Config) {
+			cfg.Routing.RUGeoIPDirectEnabled = true
+		})
+	case "geoip-disable":
+		return m.applyRouting("GeoIP Россия", func(cfg *config.Config) {
+			cfg.Routing.RUGeoIPDirectEnabled = false
+		})
+	case "ru-domains-enable":
+		return m.applyRouting("Домены России", func(cfg *config.Config) {
+			cfg.Routing.RUDomainsDirectEnabled = true
+		})
+	case "ru-domains-disable":
+		return m.applyRouting("Домены России", func(cfg *config.Config) {
+			cfg.Routing.RUDomainsDirectEnabled = false
+		})
 	case "logs":
 		logs, err := diagnostics.Logs(m.ctx, m.runner)
 		return m.withResult(logs, err)
@@ -891,6 +943,26 @@ func (m model) withResult(message string, err error) model {
 	return m
 }
 
+func (m model) applyRouting(title string, update func(*config.Config)) model {
+	if err := system.RequireRoot(); err != nil {
+		return m.withResult("", err)
+	}
+	cfg, err := config.Load(m.paths)
+	if err != nil {
+		return m.withResult("", err)
+	}
+	update(&cfg)
+	if err := config.Save(m.paths, cfg); err != nil {
+		return m.withResult("", err)
+	}
+	if localSingBoxConfigExists(m.paths) {
+		if err := modes.Reapply(m.ctx, m.runner, m.paths); err != nil {
+			return m.withResult("", err)
+		}
+	}
+	return m.withResult(title+" сохранено.", nil)
+}
+
 func (m model) ruService() ru.Service {
 	return ru.Service{Paths: m.paths, Runner: m.runner, SSH: sshclient.Client{Runner: m.runner}}
 }
@@ -932,14 +1004,14 @@ func (m model) showConnectInfo() model {
 	fmt.Fprintln(&b, "Подключение устройства")
 	fmt.Fprintln(&b)
 	fmt.Fprintf(&b, "Wi-Fi сеть: %s\n", valueOrNotConfigured(cfg.MiniPC.SSID))
-	fmt.Fprintf(&b, "Режим сейчас: %s\n", valueOrNotConfigured(cfg.CurrentMode))
-	switch cfg.CurrentMode {
-	case "tunnel":
-		fmt.Fprintln(&b, "Весь Wi-Fi трафик идёт через VPN, кроме исключений из VPN.")
-	case "selective":
+	fmt.Fprintf(&b, "Основной маршрут: %s\n", valueOrNotConfigured(cfg.Routing.DefaultRoute))
+	switch cfg.Routing.DefaultRoute {
+	case config.DefaultRouteVPN:
+		fmt.Fprintln(&b, "Весь Wi-Fi трафик идёт через VPN, кроме прямых исключений.")
+	case config.DefaultRouteDirect:
 		fmt.Fprintln(&b, "Wi-Fi работает напрямую, а выбранные сайты и IP идут через VPN.")
 	default:
-		fmt.Fprintln(&b, "VPN сейчас выключен. Выберите нужный режим в меню Интернет.")
+		fmt.Fprintln(&b, "Выберите основной маршрут в меню Интернет.")
 	}
 	if _, err := os.Stat(m.paths.ClientLink); err == nil {
 		fmt.Fprintln(&b, "QR-код клиента доступен в пункте: Показать QR-код клиента.")
@@ -1251,4 +1323,9 @@ func valueOrNotConfigured(value string) string {
 		return "не настроено"
 	}
 	return value
+}
+
+func localSingBoxConfigExists(paths config.Paths) bool {
+	_, err := os.Stat(paths.SingBoxLocalConf)
+	return err == nil
 }

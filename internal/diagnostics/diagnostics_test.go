@@ -43,7 +43,7 @@ func TestDiagnosticsAcceptsEnabledIPv4Forwarding(t *testing.T) {
 	if !strings.Contains(out, "IPv4 forwarding: ok") {
 		t.Fatalf("missing forwarding ok detail:\n%s", out)
 	}
-	if !strings.Contains(out, "Маршрут: весь трафик через VPN") {
+	if !strings.Contains(out, "Маршрут: основной маршрут через VPN") {
 		t.Fatalf("route summary should be enabled:\n%s", out)
 	}
 	if strings.Contains(out, "IPv4 forwarding выключен") {
@@ -55,6 +55,7 @@ func testDiagnosticsPaths(t *testing.T) config.Paths {
 	t.Helper()
 	paths := config.NewPaths(t.TempDir())
 	cfg := config.DefaultConfig()
+	cfg.Routing.DefaultRoute = config.DefaultRouteVPN
 	cfg.CurrentMode = "tunnel"
 	cfg.MiniPC.APInterface = "wlan0"
 	cfg.RUServer.IP = "203.0.113.10"

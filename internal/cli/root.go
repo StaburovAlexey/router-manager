@@ -18,6 +18,7 @@ import (
 	"router-manager/internal/confirm"
 	"router-manager/internal/diagnostics"
 	"router-manager/internal/foreign"
+	"router-manager/internal/geoip"
 	"router-manager/internal/modes"
 	"router-manager/internal/restore"
 	"router-manager/internal/ru"
@@ -88,12 +89,15 @@ func NewRoot(opts Options) *cobra.Command {
 		tunnelCmd(ctx, opts),
 		selectiveCmd(ctx, opts),
 		directCmd(ctx, opts),
+		routeCmd(ctx, opts),
+		geoipCmd(ctx, opts),
 		statusCmd(ctx, opts),
 		reportCmd(ctx, opts),
 		logsCmd(ctx, opts),
 		infoCmd(opts),
 		qrCmd(ctx, opts),
 		updateCmd(ctx, opts),
+		postUpdateCmd(ctx, opts),
 		restoreNetworkCmd(ctx, opts),
 		uninstallCmd(ctx, opts),
 	}
@@ -111,6 +115,26 @@ func bootstrapSetupError(err error) error {
 			"Если нужна ручная очистка локальных данных приложения и команда router-manager уже доступна, используйте sudo router-manager uninstall --keep-deps: %w",
 		err,
 	)
+}
+
+func postUpdateCmd(ctx context.Context, opts Options) *cobra.Command {
+	return &cobra.Command{
+		Hidden: true,
+		Use:    "post-update",
+		Short:  "Обновить служебные настройки после self-update",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			if err := system.RequireRoot(); err != nil {
+				return err
+			}
+			if err := bootstrap.InstallGeoIPTimer(ctx, opts.Runner); err != nil {
+				return err
+			}
+			if _, err := (geoip.Service{Paths: opts.Paths}).Update(ctx); err != nil {
+				fmt.Fprintf(cmd.ErrOrStderr(), "GeoIP не удалось обновить сейчас, старые правила сохранены: %v\n", err)
+			}
+			return nil
+		},
+	}
 }
 
 func updateCmd(ctx context.Context, opts Options) *cobra.Command {
@@ -244,6 +268,121 @@ func directCmd(ctx context.Context, opts Options) *cobra.Command {
 				return err
 			}
 			fmt.Fprintln(cmd.OutOrStdout(), "Полностью прямой интернет включён.")
+			return nil
+		},
+	}
+}
+
+func routeCmd(ctx context.Context, opts Options) *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "route <vpn|direct>",
+		Short: "Выбрать основной маршрут: VPN или прямой интернет",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			if err := system.RequireRoot(); err != nil {
+				return err
+			}
+			route := args[0]
+			switch route {
+			case "vpn":
+				if err := modes.SetDefaultRoute(ctx, opts.Runner, opts.Paths, config.DefaultRouteVPN); err != nil {
+					return err
+				}
+				fmt.Fprintln(cmd.OutOrStdout(), "Основной маршрут через VPN включён.")
+			case "direct":
+				if err := modes.SetDefaultRoute(ctx, opts.Runner, opts.Paths, config.DefaultRouteDirect); err != nil {
+					return err
+				}
+				fmt.Fprintln(cmd.OutOrStdout(), "Основной маршрут напрямую включён.")
+			default:
+				return fmt.Errorf("неизвестный основной маршрут: %s", route)
+			}
+			return nil
+		},
+	}
+	return cmd
+}
+
+func geoipCmd(ctx context.Context, opts Options) *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "geoip",
+		Short: "Управлять GeoIP правилами России",
+	}
+	cmd.AddCommand(&cobra.Command{
+		Use:   "update",
+		Short: "Обновить GeoIP список России сейчас",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			if err := system.RequireRoot(); err != nil {
+				return err
+			}
+			result, err := (geoip.Service{Paths: opts.Paths}).Update(ctx)
+			if err != nil {
+				return err
+			}
+			if result.Changed && localSingBoxConfigExists(opts.Paths) {
+				if err := modes.Reapply(ctx, opts.Runner, opts.Paths); err != nil {
+					return err
+				}
+			}
+			fmt.Fprintf(cmd.OutOrStdout(), "GeoIP Россия обновлён: %d CIDR", result.Count)
+			if !result.Changed {
+				fmt.Fprint(cmd.OutOrStdout(), " (без изменений)")
+			}
+			fmt.Fprintln(cmd.OutOrStdout())
+			return nil
+		},
+	})
+	cmd.AddCommand(&cobra.Command{
+		Use:   "status",
+		Short: "Показать статус GeoIP России",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			out, err := (geoip.Service{Paths: opts.Paths}).Status()
+			if err != nil {
+				return err
+			}
+			fmt.Fprint(cmd.OutOrStdout(), out)
+			return nil
+		},
+	})
+	cmd.AddCommand(geoipToggleCmd(ctx, opts, true), geoipToggleCmd(ctx, opts, false))
+	return cmd
+}
+
+func localSingBoxConfigExists(paths config.Paths) bool {
+	_, err := os.Stat(paths.SingBoxLocalConf)
+	return err == nil
+}
+
+func geoipToggleCmd(ctx context.Context, opts Options, enabled bool) *cobra.Command {
+	use := "disable"
+	short := "Выключить прямой доступ для российских IP"
+	message := "GeoIP Россия выключен."
+	if enabled {
+		use = "enable"
+		short = "Включить прямой доступ для российских IP"
+		message = "GeoIP Россия включён."
+	}
+	return &cobra.Command{
+		Use:   use,
+		Short: short,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			if err := system.RequireRoot(); err != nil {
+				return err
+			}
+			cfg, err := config.Load(opts.Paths)
+			if err != nil {
+				return err
+			}
+			cfg.Routing.RUGeoIPDirectEnabled = enabled
+			if err := config.Save(opts.Paths, cfg); err != nil {
+				return err
+			}
+			if localSingBoxConfigExists(opts.Paths) {
+				if err := modes.Reapply(ctx, opts.Runner, opts.Paths); err != nil {
+					return err
+				}
+			}
+			fmt.Fprintln(cmd.OutOrStdout(), message)
 			return nil
 		},
 	}

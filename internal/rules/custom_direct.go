@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net"
 	"net/url"
 	"os"
@@ -81,6 +82,14 @@ func Load(path string) (RuleSet, error) {
 }
 
 func Save(path string, set RuleSet) error {
+	var b strings.Builder
+	if err := Write(&b, set); err != nil {
+		return err
+	}
+	return config.WriteSensitiveText(path, b.String())
+}
+
+func Write(w io.Writer, set RuleSet) error {
 	set = normalize(set)
 	set.Rules = nonEmptyRules(set.Rules)
 	data, err := json.MarshalIndent(set, "", "  ")
@@ -88,7 +97,8 @@ func Save(path string, set RuleSet) error {
 		return err
 	}
 	data = append(data, '\n')
-	return config.WriteSensitiveText(path, string(data))
+	_, err = w.Write(data)
+	return err
 }
 
 func Add(path string, kind string, value string) (string, error) {

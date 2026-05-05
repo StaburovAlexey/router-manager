@@ -79,6 +79,9 @@ func (s Service) Run(ctx context.Context) error {
 		{"Удаление локального sing-box, установленного приложением", func() error {
 			return s.removeSingBox(ctx)
 		}},
+		{"Удаление таймера GeoIP router-manager", func() error {
+			return s.removeGeoIPTimer(ctx)
+		}},
 		{"Удаление бинарника router-manager", func() error {
 			return s.removeBinaries()
 		}},
@@ -104,6 +107,16 @@ func (s Service) Run(ctx context.Context) error {
 	fmt.Fprintln(s.Out, "router-manager удалён с устройства.")
 	fmt.Fprintln(s.Out, "Удалённые серверы не изменялись.")
 	return nil
+}
+
+func (s Service) removeGeoIPTimer(ctx context.Context) error {
+	_ = s.Runner.Run(ctx, "systemctl", "disable", "--now", "router-manager-geoip-update.timer")
+	for _, path := range []string{"/etc/systemd/system/router-manager-geoip-update.service", "/etc/systemd/system/router-manager-geoip-update.timer"} {
+		if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
+			return err
+		}
+	}
+	return s.Runner.Run(ctx, "systemctl", "daemon-reload")
 }
 
 func (s Service) removeSingBox(ctx context.Context) error {
