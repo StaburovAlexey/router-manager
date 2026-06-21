@@ -17,10 +17,28 @@ func TestRenderLocalUsesRUReality(t *testing.T) {
 		t.Fatal(err)
 	}
 	text := string(data)
-	for _, want := range []string{`"server": "203.0.113.10"`, `"server_name": "ru.example.com"`, `"public_key": "ru-public"`, `"short_id": "ru-short"`} {
+	for _, want := range []string{`"server": "203.0.113.10"`, `"server_name": "www.cloudflare.com"`, `"public_key": "ru-public"`, `"short_id": "ru-short"`} {
 		if !strings.Contains(text, want) {
 			t.Fatalf("local config does not contain %q:\n%s", want, text)
 		}
+	}
+}
+
+func TestRenderLocalFirstHopUsesStableRealityProfile(t *testing.T) {
+	cfg := baseConfig()
+	paths := config.NewPaths(t.TempDir())
+	data, err := RenderLocal(cfg, paths)
+	if err != nil {
+		t.Fatal(err)
+	}
+	payload := decodeConfig(t, data)
+	proxy := outboundByTag(t, payload, "proxy")
+	if proxy["flow"] != nil {
+		t.Fatalf("mini-pc -> ru first hop must not use xtls flow:\n%s", string(data))
+	}
+	tls := proxy["tls"].(map[string]any)
+	if tls["server_name"] != "www.cloudflare.com" {
+		t.Fatalf("first hop server_name = %v, want www.cloudflare.com:\n%s", tls["server_name"], string(data))
 	}
 }
 
@@ -270,6 +288,34 @@ func TestRenderRUManualUsesSelectedForeign(t *testing.T) {
 	}
 }
 
+func TestRenderRUFirstHopUsesStableRealityProfile(t *testing.T) {
+	data, err := RenderRU(baseConfig(), "ru-private", config.ForeignServers{Servers: []config.ForeignServer{
+		foreignServer("de-1"),
+	}}, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	payload := decodeConfig(t, data)
+	inbound := payload["inbounds"].([]any)[0].(map[string]any)
+	user := inbound["users"].([]any)[0].(map[string]any)
+	if user["flow"] != nil {
+		t.Fatalf("ru inbound for mini-pc must not require xtls flow:\n%s", string(data))
+	}
+	tls := inbound["tls"].(map[string]any)
+	if tls["server_name"] != "www.cloudflare.com" {
+		t.Fatalf("ru inbound server_name = %v, want www.cloudflare.com:\n%s", tls["server_name"], string(data))
+	}
+	handshake := tls["reality"].(map[string]any)["handshake"].(map[string]any)
+	if handshake["server"] != "www.cloudflare.com" {
+		t.Fatalf("ru inbound handshake server = %v, want www.cloudflare.com:\n%s", handshake["server"], string(data))
+	}
+
+	foreign := outboundByTag(t, payload, "de-1")
+	if foreign["flow"] != "xtls-rprx-vision" {
+		t.Fatalf("ru -> foreign hop must keep xtls flow:\n%s", string(data))
+	}
+}
+
 func TestExtractRealityPrivateKey(t *testing.T) {
 	key, err := ExtractRealityPrivateKey([]byte(`{
 	  "inbounds": [
@@ -325,6 +371,18 @@ func hasOutbound(payload map[string]any, tag string, typ string) bool {
 		}
 	}
 	return false
+}
+
+func outboundByTag(t *testing.T, payload map[string]any, tag string) map[string]any {
+	t.Helper()
+	for _, item := range payload["outbounds"].([]any) {
+		outbound := item.(map[string]any)
+		if outbound["tag"] == tag {
+			return outbound
+		}
+	}
+	t.Fatalf("missing outbound %q", tag)
+	return nil
 }
 
 func hasRuleSet(payload map[string]any, tag string, path string) bool {

@@ -10,10 +10,12 @@ import (
 	"time"
 )
 
+const PreferredSNI = "www.cloudflare.com"
+
 var SNICandidates = []string{
-	"www.microsoft.com",
+	PreferredSNI,
 	"www.apple.com",
-	"www.cloudflare.com",
+	"www.microsoft.com",
 	"www.amazon.com",
 	"www.bing.com",
 	"www.office.com",
@@ -45,7 +47,7 @@ func ClientLink(uuid, host string, port int, publicKey, shortID, sni, name strin
 		name = "router-manager-ru"
 	}
 	return fmt.Sprintf(
-		"vless://%s@%s:%d?security=reality&sni=%s&fp=chrome&pbk=%s&sid=%s&type=tcp&flow=xtls-rprx-vision#%s",
+		"vless://%s@%s:%d?security=reality&sni=%s&fp=chrome&pbk=%s&sid=%s&type=tcp#%s",
 		uuid,
 		host,
 		port,

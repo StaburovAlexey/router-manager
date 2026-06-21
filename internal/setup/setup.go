@@ -189,7 +189,7 @@ func (s Service) Run(ctx context.Context) error {
 		return err
 	}
 
-	link := reality.ClientLink(cfg.Reality.UUID, cfg.RUServer.IP, cfg.RUServer.TunnelPort, cfg.Reality.PublicKey, cfg.Reality.ShortID, cfg.Reality.SNI, "router-manager-ru")
+	link := reality.ClientLink(cfg.Reality.UUID, cfg.RUServer.IP, cfg.RUServer.TunnelPort, cfg.Reality.PublicKey, cfg.Reality.ShortID, reality.PreferredSNI, "router-manager-ru")
 	if err := config.WriteSensitiveText(s.Paths.ClientLink, link+"\n"); err != nil {
 		return err
 	}

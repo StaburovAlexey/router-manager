@@ -11,17 +11,16 @@
       "listen_port": {{.ListenPort}},
       "users": [
         {
-          "uuid": "{{.UUID}}",
-          "flow": "xtls-rprx-vision"
+          "uuid": "{{.UUID}}"
         }
       ],
       "tls": {
         "enabled": true,
-        "server_name": "{{.SNI}}",
+        "server_name": "www.cloudflare.com",
         "reality": {
           "enabled": true,
           "handshake": {
-            "server": "{{.SNI}}",
+            "server": "www.cloudflare.com",
             "server_port": 443
           },
           "private_key": "{{.PrivateKey}}",

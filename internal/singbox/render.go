@@ -6,6 +6,7 @@ import (
 	"os"
 
 	"router-manager/internal/config"
+	"router-manager/internal/reality"
 	"router-manager/templates"
 )
 
@@ -18,7 +19,7 @@ func RenderLocalForMode(cfg config.Config, paths config.Paths, mode string) ([]b
 	if cfg.RUServer.IP == "" {
 		return nil, fmt.Errorf("входной сервер не настроен")
 	}
-	if cfg.Reality.UUID == "" || cfg.Reality.SNI == "" || cfg.Reality.PublicKey == "" || cfg.Reality.ShortID == "" {
+	if cfg.Reality.UUID == "" || cfg.Reality.PublicKey == "" || cfg.Reality.ShortID == "" {
 		return nil, fmt.Errorf("REALITY параметры входного сервера не настроены")
 	}
 	cfg = config.NormalizeConfig(cfg)
@@ -129,10 +130,9 @@ func renderLocalJSON(cfg config.Config, paths config.Paths, defaultRoute string)
 				"server":      cfg.RUServer.IP,
 				"server_port": cfg.RUServer.TunnelPort,
 				"uuid":        cfg.Reality.UUID,
-				"flow":        "xtls-rprx-vision",
 				"tls": map[string]any{
 					"enabled":     true,
-					"server_name": cfg.Reality.SNI,
+					"server_name": reality.PreferredSNI,
 					"reality": map[string]any{
 						"enabled":    true,
 						"public_key": cfg.Reality.PublicKey,
@@ -194,7 +194,7 @@ func RenderForeign(server config.ForeignServer, uuid string, privateKey string) 
 }
 
 func RenderRU(cfg config.Config, privateKey string, servers config.ForeignServers, selected string) ([]byte, error) {
-	if cfg.Reality.UUID == "" || cfg.Reality.SNI == "" || cfg.Reality.ShortID == "" || privateKey == "" {
+	if cfg.Reality.UUID == "" || cfg.Reality.ShortID == "" || privateKey == "" {
 		return nil, fmt.Errorf("REALITY параметры входного сервера не настроены")
 	}
 	if cfg.RUServer.TunnelPort == 0 {
@@ -271,16 +271,15 @@ func RenderRU(cfg config.Config, privateKey string, servers config.ForeignServer
 				"users": []any{
 					map[string]any{
 						"uuid": cfg.Reality.UUID,
-						"flow": "xtls-rprx-vision",
 					},
 				},
 				"tls": map[string]any{
 					"enabled":     true,
-					"server_name": cfg.Reality.SNI,
+					"server_name": reality.PreferredSNI,
 					"reality": map[string]any{
 						"enabled": true,
 						"handshake": map[string]any{
-							"server":      cfg.Reality.SNI,
+							"server":      reality.PreferredSNI,
 							"server_port": 443,
 						},
 						"private_key": privateKey,

@@ -81,7 +81,7 @@ func enableSingBoxMode(ctx context.Context, runner shell.Runner, paths config.Pa
 	if err := config.Save(paths, cfg); err != nil {
 		return err
 	}
-	link := reality.ClientLink(cfg.Reality.UUID, cfg.RUServer.IP, cfg.RUServer.TunnelPort, cfg.Reality.PublicKey, cfg.Reality.ShortID, cfg.Reality.SNI, "router-manager-ru")
+	link := reality.ClientLink(cfg.Reality.UUID, cfg.RUServer.IP, cfg.RUServer.TunnelPort, cfg.Reality.PublicKey, cfg.Reality.ShortID, reality.PreferredSNI, "router-manager-ru")
 	return config.WriteSensitiveText(paths.ClientLink, link+"\n")
 }
 

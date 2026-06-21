@@ -20,10 +20,13 @@ func TestNewUUIDShape(t *testing.T) {
 }
 
 func TestClientLink(t *testing.T) {
-	link := ClientLink("uuid", "203.0.113.10", 443, "pub", "abcd", "www.microsoft.com", "router manager")
-	for _, want := range []string{"vless://uuid@203.0.113.10:443", "security=reality", "sni=www.microsoft.com", "pbk=pub", "sid=abcd", "#router-manager"} {
+	link := ClientLink("uuid", "203.0.113.10", 443, "pub", "abcd", "www.cloudflare.com", "router manager")
+	for _, want := range []string{"vless://uuid@203.0.113.10:443", "security=reality", "sni=www.cloudflare.com", "pbk=pub", "sid=abcd", "#router-manager"} {
 		if !strings.Contains(link, want) {
 			t.Fatalf("link %q does not contain %q", link, want)
 		}
+	}
+	if strings.Contains(link, "flow=xtls-rprx-vision") {
+		t.Fatalf("first-hop client link must not include xtls flow: %q", link)
 	}
 }
