@@ -198,6 +198,76 @@ func TestRenderLocalSelectiveRoutesDefaultToDirectAndCustomProxyToProxy(t *testi
 	}
 }
 
+func TestRenderLocalDirectForeignManualUsesSelectedForeign(t *testing.T) {
+	cfg := baseConfig()
+	cfg.Routing.VPNConnectionMode = config.VPNConnectionDirect
+	cfg.Routing.LocalForeignMode = config.LocalForeignModeManual
+	cfg.Routing.SelectedLocalForeign = "nl-1"
+	paths := config.NewPaths(t.TempDir())
+	if err := config.SaveForeign(paths, config.ForeignServers{Servers: []config.ForeignServer{
+		foreignServer("de-1"),
+		foreignServerWithIP("nl-1", "198.51.100.30"),
+	}}); err != nil {
+		t.Fatal(err)
+	}
+
+	data, err := RenderLocalForMode(cfg, paths, config.DefaultRouteVPN)
+	if err != nil {
+		t.Fatal(err)
+	}
+	payload := decodeConfig(t, data)
+	route := payload["route"].(map[string]any)
+	if route["final"] != "proxy" {
+		t.Fatalf("route.final = %v, want proxy:\n%s", route["final"], string(data))
+	}
+	proxy := outboundByTag(t, payload, "proxy")
+	if proxy["type"] != "vless" || proxy["server"] != "198.51.100.30" {
+		t.Fatalf("proxy outbound must point to selected foreign server:\n%s", string(data))
+	}
+	if proxy["flow"] != "xtls-rprx-vision" {
+		t.Fatalf("direct foreign outbound must use xtls flow:\n%s", string(data))
+	}
+	tls := proxy["tls"].(map[string]any)
+	if tls["server_name"] != "nl-1.example.com" {
+		t.Fatalf("proxy server_name = %v, want nl-1.example.com:\n%s", tls["server_name"], string(data))
+	}
+	if !hasDirectCIDR(payload, "198.51.100.30/32") {
+		t.Fatalf("selected foreign server IP must be routed directly:\n%s", string(data))
+	}
+	if hasDirectCIDR(payload, cfg.RUServer.IP+"/32") {
+		t.Fatalf("direct foreign mode must not pin the RU server IP as proxy infra:\n%s", string(data))
+	}
+}
+
+func TestRenderLocalDirectForeignAutoUsesURLTest(t *testing.T) {
+	cfg := baseConfig()
+	cfg.Routing.VPNConnectionMode = config.VPNConnectionDirect
+	cfg.Routing.LocalForeignMode = config.LocalForeignModeAuto
+	paths := config.NewPaths(t.TempDir())
+	if err := config.SaveForeign(paths, config.ForeignServers{Servers: []config.ForeignServer{
+		foreignServerWithIP("de-1", "198.51.100.20"),
+		foreignServerWithIP("nl-1", "198.51.100.30"),
+	}}); err != nil {
+		t.Fatal(err)
+	}
+
+	data, err := RenderLocalForMode(cfg, paths, config.DefaultRouteVPN)
+	if err != nil {
+		t.Fatal(err)
+	}
+	payload := decodeConfig(t, data)
+	if !hasOutbound(payload, "de-1", "vless") || !hasOutbound(payload, "nl-1", "vless") {
+		t.Fatalf("missing direct foreign vless outbounds:\n%s", string(data))
+	}
+	urltest := outboundByTag(t, payload, "proxy")
+	if urltest["type"] != "urltest" {
+		t.Fatalf("proxy outbound = %v, want urltest:\n%s", urltest["type"], string(data))
+	}
+	if !hasDirectCIDR(payload, "198.51.100.20/32") || !hasDirectCIDR(payload, "198.51.100.30/32") {
+		t.Fatalf("foreign server IPs must be routed directly:\n%s", string(data))
+	}
+}
+
 func TestRenderLocalSniffsBeforeDomainRouting(t *testing.T) {
 	cfg := baseConfig()
 	paths := config.NewPaths(t.TempDir())
@@ -342,9 +412,13 @@ func baseConfig() config.Config {
 }
 
 func foreignServer(name string) config.ForeignServer {
+	return foreignServerWithIP(name, "198.51.100.20")
+}
+
+func foreignServerWithIP(name string, ip string) config.ForeignServer {
 	return config.ForeignServer{
 		Name:       name,
-		IP:         "198.51.100.20",
+		IP:         ip,
 		TunnelPort: 443,
 		Reality: config.RealityConfig{
 			SNI:       name + ".example.com",
@@ -402,6 +476,30 @@ func hasRouteRule(payload map[string]any, ruleSet string, outbound string) bool 
 		rule := item.(map[string]any)
 		if rule["rule_set"] == ruleSet && rule["outbound"] == outbound {
 			return true
+		}
+	}
+	return false
+}
+
+func hasDirectCIDR(payload map[string]any, cidr string) bool {
+	return hasRouteRuleCIDR(payload, cidr, "direct")
+}
+
+func hasRouteRuleCIDR(payload map[string]any, cidr string, outbound string) bool {
+	route := payload["route"].(map[string]any)
+	for _, item := range route["rules"].([]any) {
+		rule := item.(map[string]any)
+		if rule["outbound"] != outbound {
+			continue
+		}
+		cidrs, ok := rule["ip_cidr"].([]any)
+		if !ok {
+			continue
+		}
+		for _, value := range cidrs {
+			if value == cidr {
+				return true
+			}
 		}
 	}
 	return false

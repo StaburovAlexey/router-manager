@@ -90,6 +90,7 @@ func NewRoot(opts Options) *cobra.Command {
 		selectiveCmd(ctx, opts),
 		directCmd(ctx, opts),
 		routeCmd(ctx, opts),
+		vpnCmd(ctx, opts),
 		geoipCmd(ctx, opts),
 		statusCmd(ctx, opts),
 		reportCmd(ctx, opts),
@@ -300,6 +301,48 @@ func routeCmd(ctx context.Context, opts Options) *cobra.Command {
 			return nil
 		},
 	}
+	return cmd
+}
+
+func vpnCmd(ctx context.Context, opts Options) *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "vpn",
+		Short: "Выбрать схему VPN подключения",
+	}
+	cmd.AddCommand(&cobra.Command{
+		Use:   "via-ru",
+		Short: "Подключаться через входной сервер",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			if err := modes.SetVPNConnection(ctx, opts.Runner, opts.Paths, config.VPNConnectionViaRU, config.LocalForeignModeAuto, ""); err != nil {
+				return err
+			}
+			fmt.Fprintln(cmd.OutOrStdout(), "VPN подключение через входной сервер включено.")
+			return nil
+		},
+	})
+	cmd.AddCommand(&cobra.Command{
+		Use:   "direct-auto",
+		Short: "Подключаться напрямую к автоматически выбранному выходному серверу",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			if err := modes.SetVPNConnection(ctx, opts.Runner, opts.Paths, config.VPNConnectionDirect, config.LocalForeignModeAuto, ""); err != nil {
+				return err
+			}
+			fmt.Fprintln(cmd.OutOrStdout(), "Прямое VPN подключение с авто-выбором выходного сервера включено.")
+			return nil
+		},
+	})
+	cmd.AddCommand(&cobra.Command{
+		Use:   "direct <name>",
+		Short: "Подключаться напрямую к выбранному выходному серверу",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			if err := modes.SetVPNConnection(ctx, opts.Runner, opts.Paths, config.VPNConnectionDirect, config.LocalForeignModeManual, args[0]); err != nil {
+				return err
+			}
+			fmt.Fprintf(cmd.OutOrStdout(), "Прямое VPN подключение к %s включено.\n", args[0])
+			return nil
+		},
+	})
 	return cmd
 }
 

@@ -44,6 +44,9 @@ type RoutingPolicy struct {
 
 type RoutingConfig struct {
 	DefaultRoute            string `json:"default_route"`
+	VPNConnectionMode       string `json:"vpn_connection_mode"`
+	LocalForeignMode        string `json:"local_foreign_mode"`
+	SelectedLocalForeign    string `json:"selected_local_foreign,omitempty"`
 	RUDomainsDirectEnabled  bool   `json:"ru_domains_direct_enabled"`
 	RUGeoIPDirectEnabled    bool   `json:"ru_geoip_direct_enabled"`
 	GeoIPSource             string `json:"geoip_source"`
@@ -53,9 +56,13 @@ type RoutingConfig struct {
 }
 
 const (
-	DefaultRouteVPN    = "vpn"
-	DefaultRouteDirect = "direct"
-	DefaultGeoIPSource = "https://www.ipdeny.com/ipblocks/data/aggregated/ru-aggregated.zone"
+	DefaultRouteVPN        = "vpn"
+	DefaultRouteDirect     = "direct"
+	VPNConnectionViaRU     = "via_ru_server"
+	VPNConnectionDirect    = "direct_foreign"
+	LocalForeignModeAuto   = "auto"
+	LocalForeignModeManual = "manual"
+	DefaultGeoIPSource     = "https://www.ipdeny.com/ipblocks/data/aggregated/ru-aggregated.zone"
 )
 
 type ForeignServers struct {
@@ -111,6 +118,8 @@ func DefaultConfig() Config {
 		},
 		Routing: RoutingConfig{
 			DefaultRoute:            DefaultRouteDirect,
+			VPNConnectionMode:       VPNConnectionViaRU,
+			LocalForeignMode:        LocalForeignModeAuto,
 			RUDomainsDirectEnabled:  true,
 			RUGeoIPDirectEnabled:    true,
 			GeoIPSource:             DefaultGeoIPSource,
@@ -142,6 +151,21 @@ func NormalizeConfig(cfg Config) Config {
 	}
 	if cfg.Routing.DefaultRoute != DefaultRouteVPN {
 		cfg.Routing.DefaultRoute = DefaultRouteDirect
+	}
+	if cfg.Routing.VPNConnectionMode == "" {
+		cfg.Routing.VPNConnectionMode = VPNConnectionViaRU
+	}
+	if cfg.Routing.VPNConnectionMode != VPNConnectionDirect {
+		cfg.Routing.VPNConnectionMode = VPNConnectionViaRU
+		cfg.Routing.LocalForeignMode = LocalForeignModeAuto
+		cfg.Routing.SelectedLocalForeign = ""
+	}
+	if cfg.Routing.LocalForeignMode == "" {
+		cfg.Routing.LocalForeignMode = LocalForeignModeAuto
+	}
+	if cfg.Routing.LocalForeignMode != LocalForeignModeManual {
+		cfg.Routing.LocalForeignMode = LocalForeignModeAuto
+		cfg.Routing.SelectedLocalForeign = ""
 	}
 	if cfg.Routing.GeoIPSource == "" {
 		cfg.Routing.GeoIPSource = DefaultGeoIPSource

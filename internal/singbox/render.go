@@ -16,14 +16,21 @@ func RenderLocal(cfg config.Config, paths config.Paths) ([]byte, error) {
 }
 
 func RenderLocalForMode(cfg config.Config, paths config.Paths, mode string) ([]byte, error) {
-	if cfg.RUServer.IP == "" {
+	cfg = config.NormalizeConfig(cfg)
+	foreignServers, err := config.LoadForeign(paths)
+	if err != nil {
+		return nil, err
+	}
+	if cfg.Routing.VPNConnectionMode != config.VPNConnectionDirect && cfg.RUServer.IP == "" {
 		return nil, fmt.Errorf("входной сервер не настроен")
 	}
-	if cfg.Reality.UUID == "" || cfg.Reality.PublicKey == "" || cfg.Reality.ShortID == "" {
+	if cfg.Reality.UUID == "" {
+		return nil, fmt.Errorf("REALITY UUID не настроен")
+	}
+	if cfg.Routing.VPNConnectionMode != config.VPNConnectionDirect && (cfg.Reality.PublicKey == "" || cfg.Reality.ShortID == "") {
 		return nil, fmt.Errorf("REALITY параметры входного сервера не настроены")
 	}
-	cfg = config.NormalizeConfig(cfg)
-	return renderLocalJSON(cfg, paths, normalizeRouteMode(mode))
+	return renderLocalJSON(cfg, paths, normalizeRouteMode(mode), foreignServers)
 }
 
 func normalizeRouteMode(mode string) string {
@@ -37,9 +44,13 @@ func normalizeRouteMode(mode string) string {
 	}
 }
 
-func renderLocalJSON(cfg config.Config, paths config.Paths, defaultRoute string) ([]byte, error) {
+func renderLocalJSON(cfg config.Config, paths config.Paths, defaultRoute string, foreignServers config.ForeignServers) ([]byte, error) {
 	if defaultRoute != config.DefaultRouteVPN && defaultRoute != config.DefaultRouteDirect {
 		return nil, fmt.Errorf("неизвестный основной маршрут: %s", defaultRoute)
+	}
+	proxyOutbounds, proxyTag, proxyIPs, err := localProxyOutbounds(cfg, foreignServers)
+	if err != nil {
+		return nil, err
 	}
 	ruleSets := []any{}
 	addRuleSet := func(tag string, path string) {
@@ -58,6 +69,16 @@ func renderLocalJSON(cfg config.Config, paths config.Paths, defaultRoute string)
 	}
 
 	dnsRules := []any{}
+	infraCIDRs := []string{
+		cfg.MiniPC.LANCIDR,
+		"10.0.0.0/8",
+		"172.16.0.0/12",
+		"192.168.0.0/16",
+	}
+	for _, ip := range proxyIPs {
+		infraCIDRs = append([]string{ip + "/32"}, infraCIDRs...)
+	}
+
 	routeRules := []any{
 		map[string]any{
 			"action":  "sniff",
@@ -68,13 +89,7 @@ func renderLocalJSON(cfg config.Config, paths config.Paths, defaultRoute string)
 			"action": "hijack-dns",
 		},
 		map[string]any{
-			"ip_cidr": []string{
-				cfg.RUServer.IP + "/32",
-				cfg.MiniPC.LANCIDR,
-				"10.0.0.0/8",
-				"172.16.0.0/12",
-				"192.168.0.0/16",
-			},
+			"ip_cidr":  infraCIDRs,
 			"outbound": "direct",
 		},
 	}
@@ -82,7 +97,7 @@ func renderLocalJSON(cfg config.Config, paths config.Paths, defaultRoute string)
 	routeFinal := "direct"
 	if defaultRoute == config.DefaultRouteVPN {
 		dnsFinal = "remote"
-		routeFinal = "proxy"
+		routeFinal = proxyTag
 		dnsRules = append(dnsRules, map[string]any{"rule_set": "custom-direct", "server": "local"})
 		if cfg.Routing.RUDomainsDirectEnabled {
 			dnsRules = append(dnsRules, map[string]any{"domain_suffix": ruDomainSuffixes(), "server": "local"})
@@ -90,14 +105,14 @@ func renderLocalJSON(cfg config.Config, paths config.Paths, defaultRoute string)
 		}
 		routeRules = append(routeRules,
 			map[string]any{"rule_set": "custom-direct", "outbound": "direct"},
-			map[string]any{"rule_set": "custom-proxy", "outbound": "proxy"},
+			map[string]any{"rule_set": "custom-proxy", "outbound": proxyTag},
 		)
 		if geoIPEnabled {
 			routeRules = append(routeRules, map[string]any{"rule_set": "geoip-ru", "outbound": "direct"})
 		}
 	} else {
 		dnsRules = append(dnsRules, map[string]any{"rule_set": "custom-proxy", "server": "remote"})
-		routeRules = append(routeRules, map[string]any{"rule_set": "custom-proxy", "outbound": "proxy"})
+		routeRules = append(routeRules, map[string]any{"rule_set": "custom-proxy", "outbound": proxyTag})
 	}
 
 	payload := map[string]any{
@@ -108,7 +123,7 @@ func renderLocalJSON(cfg config.Config, paths config.Paths, defaultRoute string)
 		"dns": map[string]any{
 			"servers": []any{
 				map[string]any{"tag": "local", "type": "local"},
-				map[string]any{"tag": "remote", "type": "https", "server": "1.1.1.1", "detour": "proxy"},
+				map[string]any{"tag": "remote", "type": "https", "server": "1.1.1.1", "detour": proxyTag},
 			},
 			"rules": dnsRules,
 			"final": dnsFinal,
@@ -123,30 +138,10 @@ func renderLocalJSON(cfg config.Config, paths config.Paths, defaultRoute string)
 				"strict_route":   true,
 			},
 		},
-		"outbounds": []any{
-			map[string]any{
-				"type":        "vless",
-				"tag":         "proxy",
-				"server":      cfg.RUServer.IP,
-				"server_port": cfg.RUServer.TunnelPort,
-				"uuid":        cfg.Reality.UUID,
-				"tls": map[string]any{
-					"enabled":     true,
-					"server_name": reality.PreferredSNI,
-					"reality": map[string]any{
-						"enabled":    true,
-						"public_key": cfg.Reality.PublicKey,
-						"short_id":   cfg.Reality.ShortID,
-					},
-					"utls": map[string]any{
-						"enabled":     true,
-						"fingerprint": "chrome",
-					},
-				},
-			},
+		"outbounds": append(proxyOutbounds,
 			map[string]any{"type": "direct", "tag": "direct"},
 			map[string]any{"type": "block", "tag": "block"},
-		},
+		),
 		"route": map[string]any{
 			"default_domain_resolver": "local",
 			"rule_set":                ruleSets,
@@ -160,6 +155,78 @@ func renderLocalJSON(cfg config.Config, paths config.Paths, defaultRoute string)
 		return nil, err
 	}
 	return append(data, '\n'), nil
+}
+
+func localProxyOutbounds(cfg config.Config, foreignServers config.ForeignServers) ([]any, string, []string, error) {
+	if cfg.Routing.VPNConnectionMode != config.VPNConnectionDirect {
+		return []any{vlessOutbound("proxy", cfg.RUServer.IP, cfg.RUServer.TunnelPort, cfg.Reality.UUID, reality.PreferredSNI, cfg.Reality.PublicKey, cfg.Reality.ShortID)}, "proxy", []string{cfg.RUServer.IP}, nil
+	}
+	servers := foreignServers.Servers
+	if len(servers) == 0 {
+		return nil, "", nil, fmt.Errorf("выходные серверы не настроены")
+	}
+	proxyIPs := make([]string, 0, len(servers))
+	if cfg.Routing.LocalForeignMode == config.LocalForeignModeManual {
+		server, ok := findForeignServer(servers, cfg.Routing.SelectedLocalForeign)
+		if !ok {
+			return nil, "", nil, fmt.Errorf("выбранный локальный выходной сервер %s не найден", cfg.Routing.SelectedLocalForeign)
+		}
+		return []any{foreignOutbound("proxy", server, cfg.Reality.UUID)}, "proxy", []string{server.IP}, nil
+	}
+	outbounds := make([]any, 0, len(servers)+1)
+	tags := make([]string, 0, len(servers))
+	for _, server := range servers {
+		outbounds = append(outbounds, foreignOutbound(server.Name, server, cfg.Reality.UUID))
+		tags = append(tags, server.Name)
+		proxyIPs = append(proxyIPs, server.IP)
+	}
+	outbounds = append(outbounds, map[string]any{
+		"type":      "urltest",
+		"tag":       "proxy",
+		"outbounds": tags,
+		"url":       "https://www.gstatic.com/generate_204",
+		"interval":  "1m",
+		"tolerance": 50,
+	})
+	return outbounds, "proxy", proxyIPs, nil
+}
+
+func foreignOutbound(tag string, server config.ForeignServer, uuid string) any {
+	outbound := vlessOutbound(tag, server.IP, server.TunnelPort, uuid, server.Reality.SNI, server.Reality.PublicKey, server.Reality.ShortID)
+	outbound["flow"] = "xtls-rprx-vision"
+	return outbound
+}
+
+func vlessOutbound(tag string, server string, port int, uuid string, sni string, publicKey string, shortID string) map[string]any {
+	return map[string]any{
+		"type":        "vless",
+		"tag":         tag,
+		"server":      server,
+		"server_port": port,
+		"uuid":        uuid,
+		"tls": map[string]any{
+			"enabled":     true,
+			"server_name": sni,
+			"reality": map[string]any{
+				"enabled":    true,
+				"public_key": publicKey,
+				"short_id":   shortID,
+			},
+			"utls": map[string]any{
+				"enabled":     true,
+				"fingerprint": "chrome",
+			},
+		},
+	}
+}
+
+func findForeignServer(servers []config.ForeignServer, name string) (config.ForeignServer, bool) {
+	for _, server := range servers {
+		if server.Name == name {
+			return server, true
+		}
+	}
+	return config.ForeignServer{}, false
 }
 
 func ruDomainSuffixes() []string {

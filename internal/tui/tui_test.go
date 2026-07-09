@@ -63,6 +63,13 @@ func TestTUIForeignSwitchItemsUseServerActions(t *testing.T) {
 	assertMenuItem(t, items, "nl-1 -> 203.0.113.20:9443", "ru-use:nl-1")
 }
 
+func TestTUILocalForeignSwitchItemsUseServerActions(t *testing.T) {
+	paths := testForeignServerPaths(t)
+	items := testModelWithPaths(paths).setMenu("local-foreign-switch").items()
+	assertMenuItem(t, items, "de-1 -> 203.0.113.10:8443", "local-foreign-use:de-1")
+	assertMenuItem(t, items, "nl-1 -> 203.0.113.20:9443", "local-foreign-use:nl-1")
+}
+
 func TestTUIForeignTestItemsUseServerActions(t *testing.T) {
 	paths := testForeignServerPaths(t)
 	items := testModelWithPaths(paths).setMenu("foreign-test").items()
@@ -82,9 +89,18 @@ func TestTUIInternetMenuShowsSingleRouteSwitch(t *testing.T) {
 
 	assertMenuItem(t, items, "Пропускать весь трафик через VPN", "route:vpn")
 	assertMenuItem(t, items, "Отключить пропуск всего трафика через VPN", "route:direct")
+	assertMenuItem(t, items, "VPN подключение", "menu:vpn-connection")
 	assertMenuItem(t, items, "GeoIP Россия", "menu:geoip")
 	assertNoMenuTitle(t, items, "Весь трафик через VPN")
 	assertNoMenuTitle(t, items, "Прямой интернет, выбранные сайты через VPN")
+}
+
+func TestTUIVPNConnectionMenuHasDirectModes(t *testing.T) {
+	items := testModel().setMenu("vpn-connection").items()
+
+	assertMenuItem(t, items, "Через входной сервер", "vpn-connection:via-ru")
+	assertMenuItem(t, items, "Напрямую к выходному серверу: автоматически", "vpn-connection:direct-auto")
+	assertMenuItem(t, items, "Напрямую к выходному серверу: выбрать вручную", "menu:local-foreign-switch")
 }
 
 func TestTUIRoutingRulesMenuSeparatesDirectAndProxyLists(t *testing.T) {

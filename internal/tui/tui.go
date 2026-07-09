@@ -368,12 +368,22 @@ func (m model) items() []item {
 			{"Проверить состояние интернета", "status"},
 			{"Пропускать весь трафик через VPN", "route:vpn"},
 			{"Отключить пропуск всего трафика через VPN", "route:direct"},
+			{"VPN подключение", "menu:vpn-connection"},
 			{"Правила маршрутизации", "menu:route-rules"},
 			{"GeoIP Россия", "menu:geoip"},
 			{"Выбрать выходной сервер", "menu:foreign-switch"},
 			{"Автоматически выбирать выходной сервер", "ru-auto"},
 			{"Назад", "back"},
 		}
+	case "vpn-connection":
+		return []item{
+			{"Через входной сервер", "vpn-connection:via-ru"},
+			{"Напрямую к выходному серверу: автоматически", "vpn-connection:direct-auto"},
+			{"Напрямую к выходному серверу: выбрать вручную", "menu:local-foreign-switch"},
+			{"Назад", "menu:internet"},
+		}
+	case "local-foreign-switch":
+		return m.localForeignSwitchItems()
 	case "connect":
 		return []item{
 			{"Показать данные для подключения", "connect-info"},
@@ -517,6 +527,10 @@ func (m model) menuTitle() string {
 		return "интернет"
 	case "connect":
 		return "подключение устройства"
+	case "vpn-connection":
+		return "VPN подключение"
+	case "local-foreign-switch":
+		return "выбор выходного сервера"
 	case "route-rules":
 		return "правила маршрутизации"
 	case "direct-rules":
@@ -567,6 +581,17 @@ func (m model) run(action string) model {
 		}
 		return m.withResult("Основной маршрут напрямую включён.", err)
 	}
+	if strings.HasPrefix(action, "vpn-connection:") {
+		mode := strings.TrimPrefix(action, "vpn-connection:")
+		switch mode {
+		case "via-ru":
+			err := modes.SetVPNConnection(m.ctx, m.runner, m.paths, config.VPNConnectionViaRU, config.LocalForeignModeAuto, "")
+			return m.withResult("VPN подключение через входной сервер включено.", err)
+		case "direct-auto":
+			err := modes.SetVPNConnection(m.ctx, m.runner, m.paths, config.VPNConnectionDirect, config.LocalForeignModeAuto, "")
+			return m.withResult("Прямое VPN подключение с авто-выбором выходного сервера включено.", err)
+		}
+	}
 	if strings.HasPrefix(action, "direct-add:") || strings.HasPrefix(action, "proxy-add:") {
 		spec := m.ruleSetSpecForAction(action)
 		kind := strings.TrimPrefix(action, spec.addPrefix+":")
@@ -609,6 +634,11 @@ func (m model) run(action string) model {
 		name := strings.TrimPrefix(action, "ru-test:")
 		err := m.ruService().Test(m.ctx, name)
 		return m.withResult("Проверка успешна.", err)
+	}
+	if strings.HasPrefix(action, "local-foreign-use:") {
+		name := strings.TrimPrefix(action, "local-foreign-use:")
+		err := modes.SetVPNConnection(m.ctx, m.runner, m.paths, config.VPNConnectionDirect, config.LocalForeignModeManual, name)
+		return m.withResult(fmt.Sprintf("Прямое VPN подключение к %s включено.", name), err).setMenu("internet")
 	}
 
 	switch action {
@@ -1005,6 +1035,7 @@ func (m model) showConnectInfo() model {
 	fmt.Fprintln(&b)
 	fmt.Fprintf(&b, "Wi-Fi сеть: %s\n", valueOrNotConfigured(cfg.MiniPC.SSID))
 	fmt.Fprintf(&b, "Основной маршрут: %s\n", valueOrNotConfigured(cfg.Routing.DefaultRoute))
+	fmt.Fprintf(&b, "VPN подключение: %s\n", formatVPNConnection(cfg))
 	switch cfg.Routing.DefaultRoute {
 	case config.DefaultRouteVPN:
 		fmt.Fprintln(&b, "Весь Wi-Fi трафик идёт через VPN, кроме прямых исключений.")
@@ -1085,6 +1116,12 @@ func (m model) showForeignList() model {
 
 func (m model) foreignSwitchItems() []item {
 	return m.foreignServerItems("ru-use", func(server config.ForeignServer) string {
+		return fmt.Sprintf("%s -> %s:%d", server.Name, server.IP, server.TunnelPort)
+	})
+}
+
+func (m model) localForeignSwitchItems() []item {
+	return m.foreignServerItems("local-foreign-use", func(server config.ForeignServer) string {
 		return fmt.Sprintf("%s -> %s:%d", server.Name, server.IP, server.TunnelPort)
 	})
 }
@@ -1323,6 +1360,16 @@ func valueOrNotConfigured(value string) string {
 		return "не настроено"
 	}
 	return value
+}
+
+func formatVPNConnection(cfg config.Config) string {
+	if cfg.Routing.VPNConnectionMode == config.VPNConnectionDirect {
+		if cfg.Routing.LocalForeignMode == config.LocalForeignModeManual {
+			return "напрямую к " + valueOrNotConfigured(cfg.Routing.SelectedLocalForeign)
+		}
+		return "напрямую к выходному серверу, авто"
+	}
+	return "через входной сервер"
 }
 
 func localSingBoxConfigExists(paths config.Paths) bool {

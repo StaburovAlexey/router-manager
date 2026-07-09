@@ -16,6 +16,8 @@ import (
 type Status struct {
 	Mode            string
 	DefaultRoute    string
+	VPNConnection   string
+	LocalForeign    string
 	WANInterface    string
 	APInterface     string
 	SSID            string
@@ -44,6 +46,8 @@ func Collect(ctx context.Context, runner shell.Runner, paths config.Paths) (Stat
 	status := Status{
 		Mode:            cfg.CurrentMode,
 		DefaultRoute:    cfg.Routing.DefaultRoute,
+		VPNConnection:   cfg.Routing.VPNConnectionMode,
+		LocalForeign:    localForeignSummary(cfg),
 		WANInterface:    cfg.MiniPC.WANInterface,
 		APInterface:     cfg.MiniPC.APInterface,
 		SSID:            cfg.MiniPC.SSID,
@@ -84,6 +88,7 @@ func Format(status Status) string {
 	fmt.Fprintln(&b)
 	fmt.Fprintln(&b, "Технические детали:")
 	fmt.Fprintf(&b, "Текущий режим: %s\n", value(status.Mode))
+	fmt.Fprintf(&b, "VPN подключение: %s\n", value(status.LocalForeign))
 	fmt.Fprintf(&b, "Входящий интернет: %s\n", value(status.WANInterface))
 	fmt.Fprintf(&b, "Wi-Fi адаптер для раздачи: %s\n", value(status.APInterface))
 	fmt.Fprintf(&b, "Wi-Fi SSID: %s\n", value(status.SSID))
@@ -172,6 +177,16 @@ func routeSummary(status Status) string {
 	default:
 		return value(status.Mode)
 	}
+}
+
+func localForeignSummary(cfg config.Config) string {
+	if cfg.Routing.VPNConnectionMode == config.VPNConnectionDirect {
+		if cfg.Routing.LocalForeignMode == config.LocalForeignModeManual {
+			return "напрямую к " + value(cfg.Routing.SelectedLocalForeign)
+		}
+		return "напрямую к выходному серверу, авто"
+	}
+	return "через входной сервер"
 }
 
 func dnsSummary(status Status) string {
